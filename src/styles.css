@@ -1510,3 +1510,48 @@ input[type="time"] {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ───────────────────────── linked accounts ───────────────────────── */
+.acctlist {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.acctrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  min-width: 0;
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--field-border), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.acctrow .acct-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+.acct-warn {
+  color: #d9480f;
+  font-size: 12px;
+}
+
+/* calendars grouped by account */
+.calgroup + .calgroup {
+  margin-top: 6px;
+}
+.calgroup-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+  padding: 4px 6px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

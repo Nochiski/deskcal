@@ -97,6 +97,7 @@ pub async fn fetch(
         owned: false,
         is_holiday,
         can_edit: false,
+        account: "iCal".into(),
         default_reminders: vec![],
     };
     let vevents = ics::parse_events(&text);

@@ -98,8 +98,51 @@ pub fn save_window(p: &Paths, w: &WindowGeometry) {
 
 // ── secrets ──
 
+/// Legacy single-account key (migrated to the per-account key on first load).
 pub const SECRET_GOOGLE_REFRESH: &str = "google_refresh_token";
 pub const SECRET_APPLE_PASSWORD: &str = "apple_app_password";
+
+pub fn google_secret_key(account_id: &str) -> String {
+    format!("google_refresh_token:{account_id}")
+}
+
+/// Migrates pre-multi-account data: the single `google_email` + legacy keyring entry become a
+/// Google account with id "legacy", and calendar prefs keyed `google:<cal>` become
+/// `google:legacy:<cal>`. Cached Google events are dropped (they re-sync with the new ids).
+pub fn migrate_accounts(p: &Paths, accounts: &mut Accounts, settings: &mut Settings, cache: &mut SyncResult) {
+    let Some(email) = accounts.google_email.take() else { return };
+    let legacy_id = "legacy".to_string();
+    if let Some(token) = get_secret(SECRET_GOOGLE_REFRESH) {
+        if set_secret(&google_secret_key(&legacy_id), &token).is_ok() {
+            delete_secret(SECRET_GOOGLE_REFRESH);
+        }
+        if !accounts.google_accounts.iter().any(|a| a.id == legacy_id) {
+            accounts
+                .google_accounts
+                .push(crate::model::GoogleAccount { id: legacy_id.clone(), email });
+        }
+    }
+    save_accounts(p, accounts);
+
+    let prefs: Vec<(String, crate::model::CalendarPrefs)> = settings
+        .calendars
+        .iter()
+        .filter(|(k, _)| k.starts_with("google:") && !k.starts_with("google:legacy:"))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if !prefs.is_empty() {
+        for (k, v) in prefs {
+            let rest = &k["google:".len()..];
+            settings.calendars.remove(&k);
+            settings.calendars.insert(format!("google:{legacy_id}:{rest}"), v);
+        }
+        save_settings(p, settings);
+    }
+    cache.calendars.retain(|c| c.provider != crate::model::Provider::Google);
+    cache.events.retain(|e| !e.calendar_id.starts_with("google:"));
+    save_cache(p, cache);
+    log::info!("migrated legacy google account to multi-account storage");
+}
 
 pub fn get_secret(key: &str) -> Option<String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, key).ok()?;

@@ -30,7 +30,7 @@ export interface EventInput {
   reminders: number[];
 }
 
-/** A calendar (e.g. "한상목", "Tasks", "대한민국의 휴일") coming from a provider. */
+/** A calendar (e.g. "내 캘린더", "Tasks", "대한민국의 휴일") coming from a provider. */
 export interface CalendarInfo {
   /** Stable id: `${provider}:${remoteId}` */
   id: string;
@@ -45,6 +45,8 @@ export interface CalendarInfo {
   isHoliday: boolean;
   /** Events can be created/edited/deleted in this calendar (Google owner/writer, iCloud own calendars). */
   canEdit: boolean;
+  /** Owning account label (Google email, Apple ID, or "iCal"). Group calendars by this in the UI. */
+  account: string;
 }
 
 /** Per-calendar user preferences (persisted in settings). */
@@ -82,6 +84,8 @@ export interface CalEvent {
 
 export interface AccountInfo {
   provider: Provider;
+  /** Stable account id. Google: one per linked account; Apple: "apple"; iCal: "ics". */
+  id: string;
   /** Email / Apple ID shown in settings. */
   label: string;
   connected: boolean;

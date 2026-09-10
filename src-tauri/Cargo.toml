@@ -2,7 +2,7 @@
 name = "deskcal"
 version = "0.1.0"
 description = "DeskCal - lightweight desktop calendar for Windows (Google / iCloud)"
-authors = ["SangmokHan"]
+authors = ["Nochiski"]
 edition = "2021"
 license = "PolyForm-Noncommercial-1.0.0"
 

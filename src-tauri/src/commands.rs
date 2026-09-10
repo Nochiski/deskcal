@@ -57,25 +57,30 @@ fn apply_autostart(app: &AppHandle, enabled: bool) {
 
 fn accounts_of(state: &AppState) -> Vec<AccountInfo> {
     let a = state.accounts();
-    let google_connected = a.google_email.is_some() && store::get_secret(store::SECRET_GOOGLE_REFRESH).is_some();
     let apple_connected = a.apple_id.is_some() && store::get_secret(store::SECRET_APPLE_PASSWORD).is_some();
-    vec![
-        AccountInfo {
+    let mut out: Vec<AccountInfo> = a
+        .google_accounts
+        .iter()
+        .map(|g| AccountInfo {
             provider: Provider::Google,
-            label: a.google_email.clone().unwrap_or_default(),
-            connected: google_connected,
-        },
-        AccountInfo {
-            provider: Provider::Apple,
-            label: a.apple_id.clone().unwrap_or_default(),
-            connected: apple_connected,
-        },
-        AccountInfo {
-            provider: Provider::Ics,
-            label: if a.ics_feeds.is_empty() { String::new() } else { format!("{}개 구독", a.ics_feeds.len()) },
-            connected: !a.ics_feeds.is_empty(),
-        },
-    ]
+            id: g.id.clone(),
+            label: g.email.clone(),
+            connected: store::get_secret(&store::google_secret_key(&g.id)).is_some(),
+        })
+        .collect();
+    out.push(AccountInfo {
+        provider: Provider::Apple,
+        id: "apple".into(),
+        label: a.apple_id.clone().unwrap_or_default(),
+        connected: apple_connected,
+    });
+    out.push(AccountInfo {
+        provider: Provider::Ics,
+        id: "ics".into(),
+        label: if a.ics_feeds.is_empty() { String::new() } else { format!("{}개 구독", a.ics_feeds.len()) },
+        connected: !a.ics_feeds.is_empty(),
+    });
+    out
 }
 
 async fn resync_last(app: &AppHandle) -> SyncResult {
@@ -83,12 +88,16 @@ async fn resync_last(app: &AppHandle) -> SyncResult {
     crate::sync::sync_range(app, s, e).await
 }
 
-/// Resolves the provider + provider-side calendar id from a CalendarInfo id.
-fn split_calendar_id(calendar_id: &str) -> Result<(Provider, String), String> {
+/// Resolves (provider, account id, provider-side calendar id) from a CalendarInfo id.
+/// Google ids are `google:<accountId>:<calendarId>`; Apple ids are `apple:<url>`.
+fn split_calendar_id(calendar_id: &str) -> Result<(Provider, String, String), String> {
     if let Some(rest) = calendar_id.strip_prefix("google:") {
-        Ok((Provider::Google, rest.to_string()))
+        let (account, cal) = rest
+            .split_once(':')
+            .ok_or_else(|| "이전 버전의 캘린더 ID입니다. 동기화 후 다시 시도해 주세요.".to_string())?;
+        Ok((Provider::Google, account.to_string(), cal.to_string()))
     } else if let Some(rest) = calendar_id.strip_prefix("apple:") {
-        Ok((Provider::Apple, rest.to_string()))
+        Ok((Provider::Apple, "apple".to_string(), rest.to_string()))
     } else if calendar_id.starts_with("ics:") {
         Err("iCal 구독 캘린더는 읽기 전용입니다.".into())
     } else {
@@ -96,11 +105,12 @@ fn split_calendar_id(calendar_id: &str) -> Result<(Provider, String), String> {
     }
 }
 
-async fn google_access_token(state: &AppState) -> Result<String, String> {
-    let refresh = store::get_secret(store::SECRET_GOOGLE_REFRESH)
-        .ok_or("Google 계정이 연결되어 있지 않습니다.")?;
+async fn google_access_token(state: &AppState, account_id: &str) -> Result<String, String> {
+    let refresh = store::get_secret(&store::google_secret_key(account_id))
+        .ok_or("이 Google 계정의 로그인 정보가 없습니다. 설정에서 다시 로그인해 주세요.")?;
     let s = state.settings();
-    crate::sync::google_token(state, &state.http, &s.google.client_id, &s.google.client_secret, &refresh).await
+    crate::sync::google_token(state, &state.http, &s.google.client_id, &s.google.client_secret, account_id, &refresh)
+        .await
 }
 
 fn apple_creds(state: &AppState) -> Result<AppleCreds, String> {
@@ -162,28 +172,43 @@ pub async fn connect_google(app: AppHandle, state: State<'_, AppState>) -> Resul
             .map_err(|e| format!("브라우저 열기 실패: {e}"))
     })
     .await?;
-    store::set_secret(store::SECRET_GOOGLE_REFRESH, &result.refresh_token)?;
-    *state.google_token.lock().unwrap() = Some(google::AccessToken {
-        token: result.access_token,
-        expires_at: chrono::Utc::now() + chrono::Duration::seconds(result.expires_in - 60),
-    });
     let mut a = state.accounts();
-    a.google_email = Some(result.email.clone());
+    // Re-linking an already linked email replaces its token instead of duplicating the account.
+    let id = match a.google_accounts.iter().find(|g| g.email.eq_ignore_ascii_case(&result.email)) {
+        Some(g) => g.id.clone(),
+        None => {
+            let id = format!("{:x}", chrono::Utc::now().timestamp_millis());
+            a.google_accounts.push(crate::model::GoogleAccount { id: id.clone(), email: result.email.clone() });
+            id
+        }
+    };
+    store::set_secret(&store::google_secret_key(&id), &result.refresh_token)?;
+    state.google_token.lock().unwrap().insert(
+        id.clone(),
+        google::AccessToken {
+            token: result.access_token,
+            expires_at: chrono::Utc::now() + chrono::Duration::seconds(result.expires_in - 60),
+        },
+    );
     state.set_accounts(a);
-    Ok(AccountInfo { provider: Provider::Google, label: result.email, connected: true })
+    Ok(AccountInfo { provider: Provider::Google, id, label: result.email, connected: true })
 }
 
 #[tauri::command]
-pub fn disconnect_google(state: State<'_, AppState>) -> Result<(), String> {
-    store::delete_secret(store::SECRET_GOOGLE_REFRESH);
-    *state.google_token.lock().unwrap() = None;
+pub fn disconnect_google(state: State<'_, AppState>, account_id: String) -> Result<(), String> {
+    store::delete_secret(&store::google_secret_key(&account_id));
+    state.google_token.lock().unwrap().remove(&account_id);
     let mut a = state.accounts();
-    a.google_email = None;
+    a.google_accounts.retain(|g| g.id != account_id);
     state.set_accounts(a);
+    let prefix = format!("google:{account_id}:");
     let mut c = state.cache.lock().unwrap().clone();
-    c.calendars.retain(|cal| cal.provider != Provider::Google);
-    c.events.retain(|e| !e.calendar_id.starts_with("google:"));
+    c.calendars.retain(|cal| !cal.id.starts_with(&prefix));
+    c.events.retain(|e| !e.calendar_id.starts_with(&prefix));
     state.set_cache(c);
+    let mut s = state.settings();
+    s.calendars.retain(|k, _| !k.starts_with(&prefix));
+    state.set_settings(s);
     Ok(())
 }
 
@@ -205,7 +230,7 @@ pub async fn connect_apple(
     a.apple_id = Some(apple_id.clone());
     a.apple_home_url = Some(home);
     state.set_accounts(a);
-    Ok(AccountInfo { provider: Provider::Apple, label: apple_id, connected: true })
+    Ok(AccountInfo { provider: Provider::Apple, id: "apple".into(), label: apple_id, connected: true })
 }
 
 #[tauri::command]
@@ -256,10 +281,10 @@ pub fn hide_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn create_event(app: AppHandle, state: State<'_, AppState>, input: EventInput) -> Result<SyncResult, String> {
     validate_input(&input)?;
-    let (provider, remote_cal) = split_calendar_id(&input.calendar_id)?;
+    let (provider, account, remote_cal) = split_calendar_id(&input.calendar_id)?;
     match provider {
         Provider::Google => {
-            let token = google_access_token(&state).await?;
+            let token = google_access_token(&state, &account).await?;
             google::create_event(&state.http, &token, &remote_cal, &input).await?;
         }
         Provider::Apple => {
@@ -283,10 +308,10 @@ pub async fn update_event(
     if input.calendar_id != calendar_id {
         return Err("일정을 다른 캘린더로 옮기는 기능은 아직 지원하지 않습니다.".into());
     }
-    let (provider, remote_cal) = split_calendar_id(&calendar_id)?;
+    let (provider, account, remote_cal) = split_calendar_id(&calendar_id)?;
     match provider {
         Provider::Google => {
-            let token = google_access_token(&state).await?;
+            let token = google_access_token(&state, &account).await?;
             google::update_event(&state.http, &token, &remote_cal, &remote_id, &input).await?;
         }
         Provider::Apple => {
@@ -305,10 +330,10 @@ pub async fn delete_event(
     calendar_id: String,
     remote_id: String,
 ) -> Result<SyncResult, String> {
-    let (provider, remote_cal) = split_calendar_id(&calendar_id)?;
+    let (provider, account, remote_cal) = split_calendar_id(&calendar_id)?;
     match provider {
         Provider::Google => {
-            let token = google_access_token(&state).await?;
+            let token = google_access_token(&state, &account).await?;
             google::delete_event(&state.http, &token, &remote_cal, &remote_id).await?;
         }
         Provider::Apple => {

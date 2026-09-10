@@ -168,6 +168,7 @@ pub async fn list_calendars(
             owned,
             is_holiday,
             can_edit,
+            account: creds.apple_id.clone(),
             default_reminders: vec![],
         });
     }

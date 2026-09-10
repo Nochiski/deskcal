@@ -55,6 +55,15 @@ function labelOfReminder(m: number): string {
 export default function EventEditor({ calendars, colorOf, event, draft, onSaved, onClose }: Props) {
   const editing = !!event;
   const editable = useMemo(() => calendars.filter((c) => c.canEdit), [calendars]);
+  /** Editable calendars grouped by owning account (only used when several accounts exist). */
+  const accountGroups = useMemo(() => {
+    const m = new Map<string, CalendarInfo[]>();
+    for (const c of editable) {
+      const k = c.account || (c.provider === "apple" ? "iCloud" : "Google");
+      m.set(k, [...(m.get(k) ?? []), c]);
+    }
+    return Array.from(m.entries());
+  }, [editable]);
 
   // ── initial state ──
   const init = useMemo(() => {
@@ -263,11 +272,21 @@ export default function EventEditor({ calendars, colorOf, event, draft, onSaved,
             <select value={calendarId} onChange={(e) => setCalendarId(e.target.value)} disabled={editing || editable.length === 0}>
               {editable.length === 0 && <option value="">수정 가능한 캘린더 없음</option>}
               {editing && !editable.some((c) => c.id === calendarId) && cal && <option value={cal.id}>{cal.name}</option>}
-              {editable.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              {accountGroups.length > 1
+                ? accountGroups.map(([acct, cals]) => (
+                    <optgroup key={acct} label={acct}>
+                      {cals.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))
+                : editable.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
             </select>
           </label>
 

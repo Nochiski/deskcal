@@ -19,11 +19,15 @@ export const saveSettings = (settings: Settings) =>
 /** Connected accounts. */
 export const getAccounts = () =>
   isTauri ? invoke<AccountInfo[]>("get_accounts") : mock.getAccounts();
-/** Opens the browser for Google OAuth (PKCE, loopback). Resolves when login finishes. */
+/**
+ * Opens the browser for Google OAuth (PKCE, loopback). Resolves when login finishes.
+ * Can be called repeatedly to link additional Google accounts (re-linking an email replaces its token).
+ */
 export const connectGoogle = () =>
   isTauri ? invoke<AccountInfo>("connect_google") : mock.connectGoogle();
-export const disconnectGoogle = () =>
-  isTauri ? invoke<void>("disconnect_google") : mock.disconnectGoogle();
+/** Unlinks one Google account by `AccountInfo.id`. */
+export const disconnectGoogle = (accountId: string) =>
+  isTauri ? invoke<void>("disconnect_google", { accountId }) : mock.disconnectGoogle(accountId);
 /** iCloud CalDAV with Apple ID + app-specific password (https://appleid.apple.com → 앱 암호). */
 export const connectApple = (appleId: string, appPassword: string) =>
   isTauri

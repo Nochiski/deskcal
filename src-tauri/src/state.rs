@@ -3,7 +3,7 @@ use crate::google::AccessToken;
 use crate::model::{Accounts, Settings, SyncResult, WindowGeometry};
 use crate::store::{self, Paths};
 use chrono::{Duration, Local, NaiveDate};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
 use tauri::AppHandle;
@@ -14,7 +14,8 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     pub accounts: Mutex<Accounts>,
     pub cache: Mutex<SyncResult>,
-    pub google_token: Mutex<Option<AccessToken>>,
+    /// Access tokens per Google account id.
+    pub google_token: Mutex<HashMap<String, AccessToken>>,
     /// Last date range requested by the UI (used by the background sync).
     pub last_range: Mutex<(NaiveDate, NaiveDate)>,
     /// Reminder keys that have already fired ("eventId|minutes").
@@ -27,9 +28,10 @@ pub struct AppState {
 impl AppState {
     pub fn new(app: &AppHandle) -> Self {
         let paths = Paths::new(app);
-        let settings = store::load_settings(&paths);
-        let accounts = store::load_accounts(&paths);
-        let cache = store::load_cache(&paths);
+        let mut settings = store::load_settings(&paths);
+        let mut accounts = store::load_accounts(&paths);
+        let mut cache = store::load_cache(&paths);
+        store::migrate_accounts(&paths, &mut accounts, &mut settings, &mut cache);
         let today = Local::now().date_naive();
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(40))
@@ -41,7 +43,7 @@ impl AppState {
             settings: Mutex::new(settings),
             accounts: Mutex::new(accounts),
             cache: Mutex::new(cache),
-            google_token: Mutex::new(None),
+            google_token: Mutex::new(HashMap::new()),
             last_range: Mutex::new((today - Duration::days(45), today + Duration::days(60))),
             fired: Mutex::new(HashSet::new()),
             syncing: AtomicBool::new(false),

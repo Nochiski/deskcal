@@ -97,9 +97,11 @@ function AccountsPane({
   patch: (p: Partial<Settings>) => void;
   onAccountsChanged: () => void;
 }) {
-  const google = accounts.find((a) => a.provider === "google");
+  const googles = accounts.filter((a) => a.provider === "google");
   const apple = accounts.find((a) => a.provider === "apple");
   const [gBusy, setGBusy] = useState(false);
+  /** id of the Google account row currently being unlinked */
+  const [gRowBusy, setGRowBusy] = useState<string | null>(null);
   const [gErr, setGErr] = useState<string | null>(null);
   const [advOpen, setAdvOpen] = useState(false);
   const [aBusy, setABusy] = useState(false);
@@ -121,15 +123,16 @@ function AccountsPane({
       setGBusy(false);
     }
   };
-  const undoGoogle = async () => {
-    setGBusy(true);
+  const undoGoogle = async (accountId: string) => {
+    setGRowBusy(accountId);
+    setGErr(null);
     try {
-      await disconnectGoogle();
+      await disconnectGoogle(accountId);
       onAccountsChanged();
     } catch (e) {
       setGErr(String(e));
     } finally {
-      setGBusy(false);
+      setGRowBusy(null);
     }
   };
   const doApple = async () => {
@@ -167,20 +170,33 @@ function AccountsPane({
         <h3>
           <GoogleLogo /> Google 캘린더
         </h3>
-        {google?.connected ? (
-          <div className="row">
-            <span className="acct-label">{google.label || "연결됨"}</span>
-            <button type="button" className="btn btn-outline" onClick={undoGoogle} disabled={gBusy}>
-              연결 해제
-            </button>
-          </div>
-        ) : (
-          <div className="row">
-            <button type="button" className="btn btn-primary" onClick={doGoogle} disabled={gBusy}>
-              {gBusy ? "브라우저에서 로그인 중…" : "Google로 로그인"}
-            </button>
-          </div>
+        {googles.length > 0 && (
+          <ul className="acctlist">
+            {googles.map((g) => (
+              <li key={g.id} className="acctrow">
+                <GoogleLogo />
+                <span className="acct-label" title={g.label}>
+                  {g.label || "Google 계정"}
+                  {!g.connected && <span className="acct-warn"> · 다시 로그인 필요</span>}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => void undoGoogle(g.id)}
+                  disabled={gBusy || gRowBusy !== null}
+                >
+                  {gRowBusy === g.id ? "해제 중…" : "연결 해제"}
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
+        <div className="row">
+          <button type="button" className={`btn ${googles.length ? "btn-outline" : "btn-primary"}`} onClick={doGoogle} disabled={gBusy}>
+            {gBusy ? "브라우저에서 로그인 중…" : googles.length ? "+ Google 계정 추가" : "Google로 로그인"}
+          </button>
+        </div>
+        {googles.length > 0 && <p className="help">여러 Google 계정을 동시에 연결할 수 있습니다. 같은 계정으로 다시 로그인하면 권한이 갱신됩니다.</p>}
         {gErr && <div className="err">{gErr}</div>}
         <button type="button" className="btn btn-link disclosure" onClick={() => setAdvOpen((v) => !v)}>
           {advOpen ? "▾" : "▸"} 고급: OAuth 클라이언트 ID / 시크릿
@@ -399,10 +415,12 @@ function CalendarsPane({
     return <p className="help">연결된 계정이 없거나 아직 동기화되지 않았습니다. 계정 탭에서 로그인 후 동기화하세요.</p>;
   }
 
-  const Group = ({ title, list }: { title: string; list: CalendarInfo[] }) =>
-    list.length === 0 ? null : (
-      <section className="sec">
-        <h3>{title}</h3>
+  const accountNames = Array.from(new Set(calendars.map((c) => c.account || "")));
+  const multiAccount = accountNames.length > 1;
+  const accountLabel = (c: CalendarInfo) =>
+    c.account || (c.provider === "apple" ? "iCloud" : c.provider === "ics" ? "iCal" : "Google");
+
+  const Rows = ({ list }: { list: CalendarInfo[] }) => (
         <ul className="callist">
           {list.map((c) => {
             const p = prefsOf(c.id);
@@ -439,8 +457,37 @@ function CalendarsPane({
             );
           })}
         </ul>
+  );
+
+  const Group = ({ title, list }: { title: string; list: CalendarInfo[] }) => {
+    if (list.length === 0) return null;
+    if (!multiAccount) {
+      return (
+        <section className="sec">
+          <h3>{title}</h3>
+          <Rows list={list} />
+        </section>
+      );
+    }
+    const byAccount = new Map<string, CalendarInfo[]>();
+    for (const c of list) {
+      const k = accountLabel(c);
+      byAccount.set(k, [...(byAccount.get(k) ?? []), c]);
+    }
+    return (
+      <section className="sec">
+        <h3>{title}</h3>
+        {Array.from(byAccount.entries()).map(([acct, cals]) => (
+          <div key={acct} className="calgroup">
+            <div className="calgroup-head" title={acct}>
+              {acct}
+            </div>
+            <Rows list={cals} />
+          </div>
+        ))}
       </section>
     );
+  };
 
   return (
     <>

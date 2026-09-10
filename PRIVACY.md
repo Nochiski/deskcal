@@ -13,10 +13,10 @@ DeskCal은 사용자의 PC에서만 동작하는 Windows 데스크톱 캘린더 
 | --- | --- | --- |
 | Google 계정 OAuth 토큰 | 사용자 PC의 Windows 자격 증명 관리자 | Google 서버와의 인증 통신에만 사용 |
 | Apple ID 및 앱 암호(iCloud) | 사용자 PC의 Windows 자격 증명 관리자 | Apple iCloud CalDAV 서버와의 인증 통신에만 사용 |
-| 캘린더 목록 및 일정(제목, 시간, 장소, 설명, 알림) | 사용자 PC (`%APPDATA%\com.sangmok.deskcal\cache.json`) | 없음 |
-| iCal 구독 URL | 사용자 PC (`%APPDATA%\com.sangmok.deskcal\accounts.json`) | 해당 URL의 서버에서 피드를 내려받을 때만 사용 |
-| 앱 설정(창 모드, 테마, 알림 설정 등) | 사용자 PC (`%APPDATA%\com.sangmok.deskcal\settings.json`) | 없음 |
-| 로그 | 사용자 PC (`%LOCALAPPDATA%\com.sangmok.deskcal\logs`) | 없음 |
+| 캘린더 목록 및 일정(제목, 시간, 장소, 설명, 알림) | 사용자 PC (`%APPDATA%\com.nochiski.deskcal\cache.json`) | 없음 |
+| iCal 구독 URL | 사용자 PC (`%APPDATA%\com.nochiski.deskcal\accounts.json`) | 해당 URL의 서버에서 피드를 내려받을 때만 사용 |
+| 앱 설정(창 모드, 테마, 알림 설정 등) | 사용자 PC (`%APPDATA%\com.nochiski.deskcal\settings.json`) | 없음 |
+| 로그 | 사용자 PC (`%LOCALAPPDATA%\com.nochiski.deskcal\logs`) | 없음 |
 
 ## Google 사용자 데이터 사용
 
@@ -34,7 +34,7 @@ Google API로 받은 데이터는 사용자의 PC에만 보관되고, 앱의 캘
 ## 데이터 삭제
 
 - 앱 설정 → 계정 → **연결 해제**를 누르면 해당 계정의 토큰/암호가 자격 증명 관리자에서 삭제되고 캐시된 일정이 제거됩니다.
-- 앱을 제거한 뒤 `%APPDATA%\com.sangmok.deskcal` 폴더를 삭제하면 모든 로컬 데이터가 없어집니다.
+- 앱을 제거한 뒤 `%APPDATA%\com.nochiski.deskcal` 폴더를 삭제하면 모든 로컬 데이터가 없어집니다.
 - Google 계정에 부여한 권한은 <https://myaccount.google.com/permissions> 에서 언제든 취소할 수 있습니다.
 
 ## 네트워크 통신
@@ -56,9 +56,9 @@ not collect, store, transmit, or sell your events, credentials, or usage data.
 
 - Google OAuth tokens and the iCloud app-specific password are stored only in the Windows Credential Manager on your PC.
 - Calendar data fetched from Google Calendar (`calendar.readonly`, `calendar.events`, `email` scopes) or iCloud CalDAV is
-  cached locally under `%APPDATA%\com.sangmok.deskcal` and used solely to display events, fire reminders, and sync edits you
+  cached locally under `%APPDATA%\com.nochiski.deskcal` and used solely to display events, fire reminders, and sync edits you
   make in the app. It is never shared with third parties or used for advertising or analytics. DeskCal's use of Google
   user data complies with the Google API Services User Data Policy, including the Limited Use requirements.
 - The app talks only to Google, Apple iCloud, and any iCal feed URLs you add yourself. There is no telemetry.
-- Disconnect an account in Settings to delete its credentials and cached events; delete `%APPDATA%\com.sangmok.deskcal`
+- Disconnect an account in Settings to delete its credentials and cached events; delete `%APPDATA%\com.nochiski.deskcal`
   to remove all local data; revoke Google access at <https://myaccount.google.com/permissions>.

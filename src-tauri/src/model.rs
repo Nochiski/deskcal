@@ -32,6 +32,9 @@ pub struct CalendarInfo {
     pub is_holiday: bool,
     #[serde(default)]
     pub can_edit: bool,
+    /// Owning account label (Google email, Apple ID, or "iCal"). Lets the UI group by account.
+    #[serde(default)]
+    pub account: String,
     /// Default reminder minutes supplied by the provider for this calendar.
     #[serde(default)]
     pub default_reminders: Vec<i64>,
@@ -86,6 +89,8 @@ pub struct CalEvent {
 #[serde(rename_all = "camelCase")]
 pub struct AccountInfo {
     pub provider: Provider,
+    /// Stable account id. Google: random id per linked account; Apple: "apple"; iCal: "ics".
+    pub id: String,
     pub label: String,
     pub connected: bool,
 }
@@ -178,12 +183,22 @@ pub struct SyncResult {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Accounts {
+    /// Legacy single-account field; migrated into `google_accounts` on load.
     pub google_email: Option<String>,
+    /// Linked Google accounts (refresh tokens live in the keyring under `google_refresh_token:{id}`).
+    pub google_accounts: Vec<GoogleAccount>,
     pub apple_id: Option<String>,
     /// Discovered CalDAV calendar-home URL for the Apple account.
     pub apple_home_url: Option<String>,
     /// Subscribed iCalendar feeds (read-only).
     pub ics_feeds: Vec<IcsFeed>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GoogleAccount {
+    pub id: String,
+    pub email: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

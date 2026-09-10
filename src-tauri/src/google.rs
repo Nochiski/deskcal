@@ -267,11 +267,16 @@ struct Reminder {
     minutes: i64,
 }
 
-pub fn calendar_id(remote_id: &str) -> String {
-    format!("google:{remote_id}")
+/// Calendar ids are namespaced per linked account: `google:<accountId>:<calendarId>`.
+pub fn calendar_id(account_id: &str, remote_id: &str) -> String {
+    format!("google:{account_id}:{remote_id}")
 }
 
-pub async fn list_calendars(http: &reqwest::Client, token: &str) -> Result<Vec<CalendarInfo>, String> {
+pub async fn list_calendars(
+    http: &reqwest::Client,
+    token: &str,
+    account: &crate::model::GoogleAccount,
+) -> Result<Vec<CalendarInfo>, String> {
     let mut out = Vec::new();
     let mut page: Option<String> = None;
     loop {
@@ -299,7 +304,7 @@ pub async fn list_calendars(http: &reqwest::Client, token: &str) -> Result<Vec<C
             let owned = c.primary || c.access_role == "owner";
             let can_edit = c.access_role == "owner" || c.access_role == "writer";
             out.push(CalendarInfo {
-                id: calendar_id(&c.id),
+                id: calendar_id(&account.id, &c.id),
                 provider: Provider::Google,
                 remote_id: c.id.clone(),
                 name,
@@ -307,6 +312,7 @@ pub async fn list_calendars(http: &reqwest::Client, token: &str) -> Result<Vec<C
                 owned,
                 is_holiday,
                 can_edit,
+                account: account.email.clone(),
                 default_reminders: c
                     .default_reminders
                     .iter()

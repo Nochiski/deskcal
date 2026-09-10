@@ -43,11 +43,26 @@ async fn do_sync(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) 
         }
     };
 
-    // ── Google ──
-    if let Some(refresh) = store::get_secret(store::SECRET_GOOGLE_REFRESH) {
-        match google_token(&state, &http, &settings.google.client_id, &settings.google.client_secret, &refresh).await
+    // ── Google (one or more linked accounts) ──
+    for account in &accounts.google_accounts {
+        let Some(refresh) = store::get_secret(&store::google_secret_key(&account.id)) else {
+            errors.push(SyncError {
+                provider: Provider::Google,
+                message: format!("{}: 저장된 로그인 정보가 없습니다. 설정에서 다시 로그인해 주세요.", account.email),
+            });
+            continue;
+        };
+        match google_token(
+            &state,
+            &http,
+            &settings.google.client_id,
+            &settings.google.client_secret,
+            &account.id,
+            &refresh,
+        )
+        .await
         {
-            Ok(token) => match google::list_calendars(&http, &token).await {
+            Ok(token) => match google::list_calendars(&http, &token, account).await {
                 Ok(cals) => {
                     let mut set = tokio::task::JoinSet::new();
                     for cal in cals.iter().filter(|c| wanted(c)).cloned() {
@@ -170,16 +185,17 @@ pub async fn google_token(
     http: &reqwest::Client,
     client_id: &str,
     client_secret: &str,
+    account_id: &str,
     refresh: &str,
 ) -> Result<String, String> {
-    if let Some(t) = state.google_token.lock().unwrap().clone() {
+    if let Some(t) = state.google_token.lock().unwrap().get(account_id).cloned() {
         if t.expires_at > Utc::now() {
             return Ok(t.token);
         }
     }
     let t = google::refresh_access_token(http, client_id, client_secret, refresh).await?;
     let token = t.token.clone();
-    *state.google_token.lock().unwrap() = Some(t);
+    state.google_token.lock().unwrap().insert(account_id.to_string(), t);
     Ok(token)
 }
 
