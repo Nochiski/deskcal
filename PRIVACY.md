@@ -45,7 +45,7 @@ Apple iCloud(caldav.icloud.com 및 계정별 pNN-caldav.icloud.com), 사용자�
 
 ## 문의
 
-문의는 GitHub 저장소의 Issues를 이용해 주세요.
+문의는 GitHub 저장소의 Issues를 이용해 주세요: <https://github.com/Nochiski/deskcal/issues>
 
 ---
 
