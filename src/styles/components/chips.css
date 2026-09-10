@@ -1,0 +1,129 @@
+/* components/chips.css — event chips (bars, timed rows, dots) and the "N개 더보기" pill. */
+.chip {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-chip);
+  padding: 0 7px;
+  font-size: var(--fs-sm);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-align: left;
+  background: transparent;
+  color: var(--fg);
+  line-height: 20px;
+  overflow: hidden;
+  transition:
+    filter var(--dur-base) var(--ease),
+    background var(--dur-base) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-base) var(--ease);
+  text-shadow: inherit;
+}
+.chip:active {
+  transform: scale(0.98);
+}
+.chip-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+}
+/* Bar chips get their colour inline (style=background); the gloss is layered on top. */
+.chip-bar {
+  color: #fff;
+  font-weight: 500;
+  text-shadow: var(--chip-bar-text-shadow);
+  box-shadow: var(--chip-bar-shadow);
+}
+.chip-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--gloss-bar);
+  mix-blend-mode: var(--gloss-bar-blend);
+  opacity: var(--gloss-bar-opacity);
+}
+.chip-bar:hover {
+  filter: var(--chip-bar-hover-filter);
+  box-shadow: var(--chip-bar-shadow-hover);
+}
+.chip-bar.cont-l {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -3px;
+  padding-left: 10px;
+}
+.chip-bar.cont-r {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-right: -3px;
+}
+.chip-timed:hover {
+  background: var(--hover);
+  box-shadow: var(--specular), 0 0 0 1px var(--surface-border);
+}
+.chip-dot {
+  position: relative;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: var(--dot-shadow);
+}
+.chip-dot::after {
+  content: "";
+  position: absolute;
+  left: 1.5px;
+  top: 1px;
+  width: 3px;
+  height: 2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  opacity: var(--dot-gloss-opacity);
+}
+.chip-time {
+  flex: none;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.chip-list {
+  height: 24px;
+  line-height: 24px;
+  border-radius: var(--radius-md);
+}
+.more {
+  flex: 1;
+  border: none;
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: left;
+  padding: 0 8px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--specular), 0 0 0 1px var(--surface-edge);
+  transition:
+    background var(--dur-base) var(--ease),
+    color var(--dur-base) var(--ease),
+    transform var(--dur-fast) var(--ease);
+  text-shadow: inherit;
+}
+.more:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+.more:active {
+  transform: scale(var(--press-scale));
+}

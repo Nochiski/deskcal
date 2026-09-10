@@ -150,6 +150,21 @@ async fn do_sync(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) 
         }
     }
 
+    // The same remote calendar (e.g. 대한민국의 휴일) can be subscribed from several linked
+    // accounts; show each occurrence once by keying on the provider-side ids.
+    {
+        let remote_of: std::collections::HashMap<&str, &str> =
+            calendars.iter().map(|c| (c.id.as_str(), c.remote_id.as_str())).collect();
+        let mut seen: std::collections::HashSet<(String, String, String)> = std::collections::HashSet::new();
+        events.retain(|e| {
+            let remote_cal = remote_of.get(e.calendar_id.as_str()).copied().unwrap_or("");
+            if remote_cal.is_empty() || e.remote_id.is_empty() {
+                return true;
+            }
+            seen.insert((remote_cal.to_string(), e.remote_id.clone(), e.start.clone()))
+        });
+    }
+
     events.sort_by(|a, b| a.start.cmp(&b.start).then(a.title.cmp(&b.title)));
     for e in &errors {
         log::warn!("sync error [{}]: {}", e.provider.as_str(), e.message);

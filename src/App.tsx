@@ -25,9 +25,11 @@ const DEFAULT_SETTINGS: Settings = {
   windowMode: "floating",
   opacity: 0.96,
   theme: "system",
+  style: "glass",
   weekStart: 0,
   syncIntervalMin: 15,
   autostart: false,
+  autostartVisible: true,
   defaultReminderMin: 10,
   notificationsEnabled: true,
   allDayReminderTime: "09:00",
@@ -35,7 +37,7 @@ const DEFAULT_SETTINGS: Settings = {
   calendars: {},
 };
 
-/** Dev-only URL params (browser mock mode): ?settings&tab=display&theme=dark */
+/** Dev-only URL params (browser mock mode): ?settings&tab=display&theme=dark&style=flat */
 const DEV_PARAMS = new URLSearchParams(typeof location !== "undefined" ? location.search : "");
 
 interface Range {
@@ -67,13 +69,45 @@ type Editor = { kind: "create"; draft: EditorDraft } | { kind: "edit"; ev: CalEv
 
 const PROVIDER_LABEL: Record<string, string> = { google: "Google", apple: "Apple", ics: "iCal" };
 
+/** Content key: two events with the same key render identically. */
+function eventKey(e: CalEvent): string {
+  return `${e.id}|${e.calendarId}|${e.remoteId}|${e.editable ? 1 : 0}|${e.title}|${e.start}|${e.end}|${e.allDay ? 1 : 0}|${e.location ?? ""}|${e.description ?? ""}|${e.reminders.join(",")}|${e.htmlLink ?? ""}`;
+}
+function calendarKey(c: CalendarInfo): string {
+  return `${c.id}|${c.name}|${c.color}|${c.owned ? 1 : 0}|${c.isHoliday ? 1 : 0}|${c.canEdit ? 1 : 0}|${c.account}`;
+}
+function sameErrors(a: SyncResult["errors"], b: SyncResult["errors"]): boolean {
+  return a.length === b.length && a.every((x, i) => x.provider === b[i].provider && x.message === b[i].message);
+}
+
+/**
+ * Returns `prev` itself when `next` has the same items (by content key) in the same order;
+ * otherwise returns `next` with every unchanged item replaced by its previous object.
+ */
+function mergeStable<T extends { id: string }>(prev: T[], next: T[], keyOf: (t: T) => string): T[] {
+  const prevByKey = new Map<string, T>();
+  for (const p of prev) prevByKey.set(keyOf(p), p);
+  let identical = prev.length === next.length;
+  const out = next.map((n, i) => {
+    const kept = prevByKey.get(keyOf(n));
+    if (!kept || kept !== prev[i]) identical = false;
+    return kept ?? n;
+  });
+  return identical ? prev : out;
+}
+
 function rectOf(el: HTMLElement): AnchorRect {
   const r = el.getBoundingClientRect();
   return { left: r.left, top: r.top, width: r.width, height: r.height };
 }
 
 export default function App() {
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<Settings>(() => ({
+    ...DEFAULT_SETTINGS,
+    // dev-only URL overrides applied up front so previews do not animate from the defaults
+    ...((DEV_PARAMS.get("theme") as Settings["theme"] | null) ? { theme: DEV_PARAMS.get("theme") as Settings["theme"] } : {}),
+    ...((DEV_PARAMS.get("style") as Settings["style"] | null) ? { style: DEV_PARAMS.get("style") as Settings["style"] } : {}),
+  }));
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [calendars, setCalendars] = useState<CalendarInfo[]>([]);
@@ -89,30 +123,34 @@ export default function App() {
   const syncSeq = useRef(0);
 
   // ── apply a sync result ──
+  // Seamless refresh: state is only replaced when something actually changed, and unchanged
+  // objects keep their identity so memoized rows / chips do not re-render or re-mount.
   const applyResult = useCallback((r: SyncResult, range: Range | null) => {
-    setCalendars(r.calendars);
+    setCalendars((prev) => mergeStable(prev, r.calendars, calendarKey));
     setSyncedAt(r.syncedAt);
-    setSyncErrors(r.errors ?? []);
+    setSyncErrors((prev) => (sameErrors(prev, r.errors ?? []) ? prev : (r.errors ?? [])));
     // Background results carry their own range; use it so deletions propagate too.
     if (!range && r.rangeStart && r.rangeEnd) range = { start: r.rangeStart, end: r.rangeEnd };
     setEvents((prev) => {
+      let next: CalEvent[];
       if (!range) {
-        // background update: merge by id (keeps events outside the backend's range)
+        // background update without a range: merge by id (keeps events outside the backend's range)
         const map = new Map(prev.map((e) => [e.id, e]));
         for (const e of r.events) map.set(e.id, e);
-        return [...map.values()];
+        next = [...map.values()];
+      } else {
+        // explicit range sync: replace everything inside the range, keep the rest
+        const s = parseDayKey(range.start).getTime();
+        const e = parseDayKey(range.end).getTime();
+        const inRange = (ev: CalEvent) => {
+          const t = (isAllDayString(ev.start) ? parseDayKey(ev.start) : eventStart(ev)).getTime();
+          return t >= s && t < e;
+        };
+        next = prev.filter((ev) => !inRange(ev));
+        const ids = new Set(next.map((k) => k.id));
+        for (const ev of r.events) if (!ids.has(ev.id)) next.push(ev);
       }
-      // explicit range sync: replace everything inside the range, keep the rest
-      const s = parseDayKey(range.start).getTime();
-      const e = parseDayKey(range.end).getTime();
-      const inRange = (ev: CalEvent) => {
-        const t = (isAllDayString(ev.start) ? parseDayKey(ev.start) : eventStart(ev)).getTime();
-        return t >= s && t < e;
-      };
-      const kept = prev.filter((ev) => !inRange(ev));
-      const ids = new Set(kept.map((k) => k.id));
-      for (const ev of r.events) if (!ids.has(ev.id)) kept.push(ev);
-      return kept;
+      return mergeStable(prev, next, eventKey);
     });
   }, []);
 
@@ -150,11 +188,13 @@ export default function App() {
       try {
         const s = await getSettings();
         const theme = DEV_PARAMS.get("theme") as Settings["theme"] | null;
+        const style = DEV_PARAMS.get("style") as Settings["style"] | null;
         if (!cancelled)
           setSettings({
             ...DEFAULT_SETTINGS,
             ...s,
             ...(theme ? { theme } : {}),
+            ...(style ? { style } : {}),
             google: { ...DEFAULT_SETTINGS.google, ...s.google },
           });
       } catch {
@@ -209,7 +249,8 @@ export default function App() {
     const root = document.documentElement;
     root.style.setProperty("--opacity", String(settings.opacity));
     root.dataset.mode = settings.windowMode;
-  }, [settings.opacity, settings.windowMode]);
+    root.dataset.style = settings.style ?? "glass";
+  }, [settings.opacity, settings.windowMode, settings.style]);
 
   // ── settings persistence (debounced) ──
   const saveTimer = useRef<number | null>(null);

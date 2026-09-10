@@ -47,7 +47,7 @@ pub fn apply_window_mode(app: &AppHandle, mode: WindowMode) {
     let _ = app.emit("window-mode-changed", mode);
 }
 
-fn apply_autostart(app: &AppHandle, enabled: bool) {
+pub fn apply_autostart(app: &AppHandle, enabled: bool) {
     let al = app.autolaunch();
     let r = if enabled { al.enable() } else { al.disable() };
     if let Err(e) = r {

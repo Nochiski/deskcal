@@ -1,0 +1,31 @@
+/* styles/glass.css — "Liquid Glass" visual style (the default).
+   Applied when <html data-style="glass">. Only effect / shape token overrides plus the
+   two structural rules that make surfaces frosted. Colours come from themes/*.css. */
+:root[data-style="glass"] {
+  --blur: blur(24px) saturate(160%);
+  --scrim-blur: blur(10px) saturate(120%);
+  --radius-pill: 999px;
+  --radius-panel: 18px;
+  --radius-sheet: 22px;
+  --radius-chip: 6px;
+  --radius-field: 10px;
+  --radius-lg: 14px;
+  --radius-grid: 14px;
+  --press-scale: 0.97;
+}
+
+/* Frosted surfaces: blur whatever sits behind the panel (other page content — or, in the
+   floating window, the Windows acrylic-blurred desktop showing through the translucent root). */
+:root[data-style="glass"] .surface,
+:root[data-style="glass"] .topbar,
+:root[data-style="glass"] .popover,
+:root[data-style="glass"] .modal,
+:root[data-style="glass"] .empty-card,
+:root[data-style="glass"] .banner {
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+}
+:root[data-style="glass"] .modal-backdrop {
+  -webkit-backdrop-filter: var(--scrim-blur);
+  backdrop-filter: var(--scrim-blur);
+}

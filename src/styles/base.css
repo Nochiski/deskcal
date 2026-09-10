@@ -1,0 +1,117 @@
+/* base.css — reset, typography, root panel, scrollbars. Only reads tokens. */
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+body {
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  color: var(--fg);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  line-height: 1.3;
+  text-shadow: var(--text-shadow);
+}
+input,
+textarea,
+select {
+  user-select: text;
+  -webkit-user-select: text;
+  font-family: inherit;
+  text-shadow: none;
+}
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Re-parented modes sit on the static wallpaper (no acrylic) → square corners, stronger tint. */
+:root[data-mode="desktop"],
+:root[data-mode="wallpaper"] {
+  --radius: 0px;
+  --tint: 0.72;
+}
+:root[data-style="flat"][data-mode="desktop"],
+:root[data-style="flat"][data-mode="wallpaper"] {
+  --tint: 1;
+}
+
+/* Root panel — translucent tint over the (acrylic-blurred) desktop; never opaque by itself. */
+.app {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--gloss-root), rgba(var(--bg-rgb), calc(var(--opacity) * var(--tint)));
+  border-radius: var(--radius);
+  box-shadow: var(--root-shadow);
+  overflow: hidden;
+}
+.app.mode-desktop,
+.app.mode-wallpaper {
+  box-shadow: none;
+}
+
+/* Elevated surface primitive (topbar, popover, modal, cards, banner). Blur is added per style. */
+.surface,
+.topbar,
+.popover,
+.modal,
+.empty-card,
+.banner {
+  background: var(--gloss-surface), var(--surface);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--specular), 0 0 0 1px var(--surface-edge), var(--shadow-ambient);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spinning svg {
+  animation: spin 0.9s linear infinite;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-faint);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

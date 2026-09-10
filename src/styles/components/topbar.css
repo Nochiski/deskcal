@@ -1,0 +1,56 @@
+/* components/topbar.css — toolbar capsule + error banner. Surface look comes from base.css. */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  margin: var(--space-3) var(--space-3) var(--space-1);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  flex: none;
+  box-shadow: var(--specular), 0 0 0 1px var(--surface-edge), var(--shadow-soft);
+}
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.topbar-title {
+  margin: 0 0 0 var(--space-3);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar-title::first-letter {
+  font-weight: 700;
+}
+.mode-desktop .topbar,
+.mode-wallpaper .topbar {
+  height: 36px;
+  margin: var(--space-2) var(--space-2) 2px;
+}
+.btn-add {
+  gap: var(--space-1);
+  padding: 4px 11px 4px 7px;
+  margin-right: var(--space-1);
+}
+
+.banner {
+  flex: none;
+  margin: 2px var(--space-3) var(--space-1);
+  padding: 5px 12px;
+  font-size: var(--fs-sm);
+  color: var(--err);
+  border-radius: var(--radius-pill);
+  background: rgba(var(--err-rgb), 0.12);
+  border-color: rgba(var(--err-rgb), 0.25);
+  box-shadow: var(--specular);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

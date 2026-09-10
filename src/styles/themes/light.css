@@ -1,0 +1,43 @@
+/* themes/light.css — colour tokens for the light scheme (token overrides only).
+   Applied when <html data-theme="light">. Values match the tokens.css baseline and are
+   repeated here so the theme is self-describing. */
+:root[data-theme="light"] {
+  --bg-rgb: 255, 255, 255;
+  --fg: #1c1c1e;
+  --fg-muted: #5b5f66;
+  --fg-faint: #9a9ea6;
+  --text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.35);
+  --hairline: rgba(20, 24, 36, 0.09);
+  --hairline-strong: rgba(20, 24, 36, 0.16);
+  --hover: rgba(255, 255, 255, 0.5);
+  --press: rgba(255, 255, 255, 0.7);
+  --accent-rgb: 10, 132, 255;
+  --accent-fg: #fff;
+  --sun: #e5484d;
+  --sat: #0a84ff;
+  --err: #e5484d;
+  --err-rgb: 229, 72, 77;
+  --warn: #d9480f;
+  --surface: rgba(255, 255, 255, 0.66);
+  --surface-2: rgba(255, 255, 255, 0.42);
+  --sheet: rgba(250, 250, 252, 0.78);
+  --surface-border: rgba(255, 255, 255, 0.65);
+  --surface-edge: rgba(20, 24, 36, 0.1);
+  --gloss-root: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0.05));
+  --gloss-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 45%);
+  --gloss-sheet: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 30%);
+  --gloss-bar: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.04) 50%, rgba(0, 0, 0, 0.06));
+  --gloss-bar-blend: soft-light;
+  --gloss-bar-opacity: 1;
+  --gloss-grid: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03));
+  --wd-header-bg: rgba(255, 255, 255, 0.12);
+  --cell-hover: rgba(255, 255, 255, 0.1);
+  --cell-out: rgba(0, 0, 0, 0.025);
+  --scrim: rgba(20, 24, 36, 0.28);
+  --field: rgba(255, 255, 255, 0.5);
+  --field-border: rgba(20, 24, 36, 0.12);
+  --specular: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow-ambient: 0 10px 34px rgba(20, 24, 36, 0.18), 0 1px 2px rgba(20, 24, 36, 0.08);
+  --shadow-soft: 0 4px 16px rgba(20, 24, 36, 0.1);
+  color-scheme: light;
+}

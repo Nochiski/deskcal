@@ -132,25 +132,47 @@ mod win {
         }
     }
 
+    /// SetParent does not touch WS_CHILD/WS_POPUP by itself (documented), but input routing and
+    /// mouse activation only work correctly for a re-parented window when it really is a child
+    /// window. Rainmeter's "on desktop" mode does the same. Restored when floating again.
+    unsafe fn set_child_style(hwnd: HWND, child: bool) {
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+        let new_style = if child {
+            (style & !WS_POPUP.0) | WS_CHILD.0
+        } else {
+            style & !WS_CHILD.0
+        };
+        if new_style != style {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, new_style as isize);
+        }
+    }
+
     pub fn apply(window: &WebviewWindow, mode: WindowMode) -> Result<(), String> {
         unsafe {
             let hwnd = hwnd_of(window)?;
+            // A maximized window cannot live inside Progman sensibly; restore it first.
+            if mode != WindowMode::Floating && IsZoomed(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
             let mut rect = RECT::default();
             GetWindowRect(hwnd, &mut rect).map_err(|e| e.to_string())?;
             set_glass(window, hwnd, mode == WindowMode::Floating);
             match mode {
                 WindowMode::Floating => {
                     let _ = SetParent(hwnd, None);
+                    set_child_style(hwnd, false);
                     keep_screen_position(hwnd, None, rect, Some(HWND_NOTOPMOST));
                 }
                 WindowMode::Desktop => {
                     let progman = find_progman()?;
+                    set_child_style(hwnd, true);
                     SetParent(hwnd, Some(progman)).map_err(|e| e.to_string())?;
                     keep_screen_position(hwnd, Some(progman), rect, Some(HWND_TOP));
                 }
                 WindowMode::Wallpaper => {
                     let progman = find_progman()?;
                     let (layer, dedicated) = find_wallpaper_layer(progman);
+                    set_child_style(hwnd, true);
                     SetParent(hwnd, Some(layer)).map_err(|e| e.to_string())?;
                     // In a dedicated WorkerW anything goes; when we had to fall back to Progman,
                     // push below SHELLDLL_DefView so the icons stay on top.

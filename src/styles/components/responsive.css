@@ -1,0 +1,52 @@
+/* components/responsive.css — narrow-width adjustments (~400px pinned widgets). */
+@media (max-width: 460px) {
+  .topbar-title {
+    font-size: 14px;
+  }
+  .topbar {
+    margin: var(--space-2) var(--space-2) 2px;
+    padding: 0 var(--space-1) 0 var(--space-2);
+  }
+  .btn-add span {
+    display: none;
+  }
+  .btn-add {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    justify-content: center;
+    margin-right: 2px;
+  }
+  .btn-today {
+    padding: 4px 9px;
+  }
+  .modal-body {
+    flex-direction: column;
+  }
+  .tabs {
+    width: auto;
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 1px solid var(--hairline);
+    padding: var(--space-3);
+    gap: var(--space-1);
+    background: transparent;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 6px 4px;
+  }
+  .field.inline > span:first-child {
+    width: 96px;
+  }
+  .editor-body .field.inline > span:first-child {
+    width: 48px;
+  }
+  .feed-add .feed-name-input {
+    flex: 1 1 100%;
+  }
+  .seg-btn {
+    padding: 5px 6px;
+  }
+}

@@ -1,0 +1,21 @@
+/* index.css — the only stylesheet main.tsx imports. Order matters:
+   1. tokens      baseline values for every variable
+   2. themes      colour overrides per <html data-theme>
+   3. styles      surface / effect / shape overrides per <html data-style>
+   4. base        reset + root panel + primitives
+   5. components  rules written purely against tokens                         */
+@import "./tokens.css";
+@import "./themes/light.css";
+@import "./themes/dark.css";
+@import "./styles/glass.css";
+@import "./styles/flat.css";
+@import "./base.css";
+@import "./components/buttons.css";
+@import "./components/topbar.css";
+@import "./components/grid.css";
+@import "./components/chips.css";
+@import "./components/popover.css";
+@import "./components/modal.css";
+@import "./components/settings.css";
+@import "./components/editor.css";
+@import "./components/responsive.css";

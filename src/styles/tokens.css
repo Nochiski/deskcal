@@ -1,0 +1,141 @@
+/* ═══════════════════════════════════════════════════════════════════
+   tokens.css — every design token DeskCal uses, defined once on :root.
+   Values here are the baseline (light theme, glass style). Theme files
+   (themes/*.css) override colour tokens; style files (styles/*.css)
+   override surface / effect / shape tokens. Components never hard-code
+   colours, blur, radii or shadows — they only read these variables.
+
+   Naming:
+     --fg-*         text colours          --accent*      brand / interactive colour
+     --surface-*    panel backgrounds     --field*       inputs & inset boxes
+     --gloss-*      decorative gradients  --shadow-*     elevation & glow
+     --radius-*     corner radii          --space-*      spacing scale
+     --dur-* / --ease  motion             --blur         backdrop filter
+   Multi-value tokens (--gloss-*, --specular, --shadow-*) are ALWAYS valid
+   CSS values so they can sit inside comma lists; "off" is expressed as a
+   transparent gradient / zero shadow, never `none`.
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* ── root panel (window background) ── */
+  --opacity: 0.96; /* set at runtime from settings.opacity */
+  --bg-rgb: 255, 255, 255;
+  --tint: 0.57; /* root alpha = --opacity × --tint */
+  --root-shadow: inset 0 0 0 1px var(--surface-border);
+  --gloss-root: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0.05));
+
+  /* ── text ── */
+  --fg: #1c1c1e;
+  --fg-muted: #5b5f66;
+  --fg-faint: #9a9ea6;
+  --text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.35);
+  --accent-text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+
+  /* ── lines & states ── */
+  --hairline: rgba(20, 24, 36, 0.09);
+  --hairline-strong: rgba(20, 24, 36, 0.16);
+  --hover: rgba(255, 255, 255, 0.5);
+  --press: rgba(255, 255, 255, 0.7);
+
+  /* ── semantic colours ── */
+  --accent-rgb: 10, 132, 255;
+  --accent: rgb(var(--accent-rgb));
+  --accent-fg: #fff;
+  --accent-soft: rgba(var(--accent-rgb), 0.1);
+  --accent-soft-hover: rgba(var(--accent-rgb), 0.16);
+  --sun: #e5484d;
+  --sat: #0a84ff;
+  --err: #e5484d;
+  --err-rgb: 229, 72, 77;
+  --warn: #d9480f;
+  --success: #0b8043;
+
+  /* ── surfaces (panels, popovers, sheets) ── */
+  --surface: rgba(255, 255, 255, 0.66); /* topbar, popover, cards */
+  --surface-2: rgba(255, 255, 255, 0.42); /* pills, chips, secondary buttons */
+  --sheet: rgba(250, 250, 252, 0.78); /* modal sheet */
+  --surface-border: rgba(255, 255, 255, 0.65);
+  --surface-edge: rgba(20, 24, 36, 0.1);
+  --gloss-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 45%);
+  --gloss-sheet: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 30%);
+  --gloss-accent: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 55%);
+  --gloss-accent-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0) 55%);
+  --gloss-bar: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.04) 50%, rgba(0, 0, 0, 0.06));
+  --gloss-bar-blend: soft-light;
+  --gloss-bar-opacity: 1;
+  --gloss-grid: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03));
+  --wd-header-bg: rgba(255, 255, 255, 0.12);
+  --cell-hover: rgba(255, 255, 255, 0.1);
+  --cell-out: rgba(0, 0, 0, 0.025);
+  --scrim: rgba(20, 24, 36, 0.28);
+  --scrim-blur: blur(10px) saturate(120%);
+
+  /* ── fields ── */
+  --field: rgba(255, 255, 255, 0.5);
+  --field-border: rgba(20, 24, 36, 0.12);
+  --switch-off: rgba(120, 124, 136, 0.35);
+  --switch-off-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --knob-bg: linear-gradient(180deg, #fff, #f0f1f4);
+  --knob-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.3);
+
+  /* ── effects ── */
+  --blur: blur(24px) saturate(160%);
+  --specular: inset 0 1px 0 rgba(255, 255, 255, 0.6); /* top highlight on glass */
+  --inset-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.45); /* on coloured things */
+  --shadow-ambient: 0 10px 34px rgba(20, 24, 36, 0.18), 0 1px 2px rgba(20, 24, 36, 0.08);
+  --shadow-soft: 0 4px 16px rgba(20, 24, 36, 0.1);
+  --shadow-low: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --shadow-accent: 0 0 0 1px rgba(var(--accent-rgb), 0.35), 0 6px 16px rgba(var(--accent-rgb), 0.35);
+  --shadow-accent-hover: 0 0 0 1px rgba(var(--accent-rgb), 0.45), 0 8px 22px rgba(var(--accent-rgb), 0.45);
+  --shadow-accent-small: 0 0 0 1px rgba(var(--accent-rgb), 0.35), 0 4px 12px rgba(var(--accent-rgb), 0.45);
+  --shadow-danger: 0 6px 16px rgba(var(--err-rgb), 0.35);
+  --ring-hover: 0 0 0 4px rgba(var(--accent-rgb), 0.12);
+  --focus-ring: 0 0 0 4px rgba(var(--accent-rgb), 0.18);
+  --focus-ring-error: 0 0 0 4px rgba(var(--err-rgb), 0.16);
+  --focus-border: rgba(var(--accent-rgb), 0.7);
+  --chip-bar-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.12);
+  --chip-bar-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 3px 8px rgba(0, 0, 0, 0.18);
+  --chip-bar-text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  --chip-bar-hover-filter: brightness(1.08) saturate(1.05);
+  --dot-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.18);
+  --dot-gloss-opacity: 1;
+  --swatch-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --icon-drop-shadow: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+
+  /* ── shape ── */
+  --radius: 8px; /* root panel; 0 in pinned modes (see base.css) */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-panel: 18px;
+  --radius-sheet: 22px;
+  --radius-pill: 999px;
+  --radius-chip: 6px;
+  --radius-daynum: 11px;
+  --radius-field: 10px;
+  --radius-grid: 14px;
+
+  /* ── spacing ── */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+
+  /* ── typography ── */
+  --font: "Pretendard", "Malgun Gothic", "맑은 고딕", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 15px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-display: 24px;
+
+  /* ── motion ── */
+  --dur-fast: 0.12s;
+  --dur-base: 0.15s;
+  --dur-slow: 0.18s;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --press-scale: 0.97;
+}

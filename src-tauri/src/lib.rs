@@ -124,8 +124,10 @@ pub fn run() {
             restore_geometry(&handle);
             tray::setup(&handle)?;
 
-            let mode = handle.state::<AppState>().settings().window_mode;
-            let minimized = std::env::args().any(|a| a == "--minimized");
+            let settings = handle.state::<AppState>().settings();
+            let mode = settings.window_mode;
+            // Autostart launches with --minimized; honour the "show window at startup" preference.
+            let minimized = std::env::args().any(|a| a == "--minimized") && !settings.autostart_visible;
             if let Some(w) = handle.get_webview_window("main") {
                 if !(minimized && mode == WindowMode::Floating) {
                     let _ = w.show();
@@ -148,6 +150,10 @@ pub fn run() {
                 });
             }
             start_mode_watchdog(handle.clone());
+            // Re-assert the autostart registration so a fresh install honours the saved preference.
+            if settings.autostart {
+                commands::apply_autostart(&handle, true);
+            }
 
             notify::start(handle.clone());
             sync::start_background(handle.clone());

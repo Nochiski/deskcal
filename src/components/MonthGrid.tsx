@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import type { CalEvent, CalendarInfo } from "../lib/types";
-import { WEEKDAY_LABELS, isSameDay, monthGrid } from "../lib/dates";
+import { WEEKDAY_LABELS, dayKey, monthGrid } from "../lib/dates";
 import { layoutWeek } from "../lib/layout";
 import EventChip from "./EventChip";
 
@@ -28,7 +28,11 @@ export default function MonthGrid({ viewMonth, weekStart, events, calendars, col
   useEffect(() => {
     const el = weeksRef.current;
     if (!el) return;
-    const update = () => setRowHeight(el.clientHeight / weeks.length);
+    // Only commit a new row height when it really changed (sub-pixel jitter must not re-layout).
+    const update = () => {
+      const h = el.clientHeight / weeks.length;
+      setRowHeight((prev) => (Math.abs(prev - h) < 0.5 ? prev : h));
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
@@ -41,7 +45,7 @@ export default function MonthGrid({ viewMonth, weekStart, events, calendars, col
   }, [weeks.length]);
 
   const maxSlots = Math.max(1, Math.floor((rowHeight - DAY_HEAD_H - CELL_PAD_BOTTOM) / SLOT_H));
-  const today = new Date();
+  const todayKey = dayKey(new Date());
   const labels = weekStart === 1 ? [...WEEKDAY_LABELS.slice(1), WEEKDAY_LABELS[0]] : WEEKDAY_LABELS;
 
   return (
@@ -62,7 +66,7 @@ export default function MonthGrid({ viewMonth, weekStart, events, calendars, col
             key={days[0].getTime()}
             days={days}
             viewMonth={viewMonth}
-            today={today}
+            todayKey={todayKey}
             events={events}
             calendars={calendars}
             colorOf={colorOf}
@@ -80,7 +84,7 @@ export default function MonthGrid({ viewMonth, weekStart, events, calendars, col
 interface WeekProps {
   days: Date[];
   viewMonth: Date;
-  today: Date;
+  todayKey: string;
   events: CalEvent[];
   calendars: Map<string, CalendarInfo>;
   colorOf: (calendarId: string) => string;
@@ -90,7 +94,8 @@ interface WeekProps {
   onDayDoubleClick?: (day: Date) => void;
 }
 
-function WeekRow({ days, viewMonth, today, events, calendars, colorOf, maxSlots, onEventClick, onMoreClick, onDayDoubleClick }: WeekProps) {
+// Memoized: a sync that changes nothing in this week leaves its DOM untouched.
+const WeekRow = memo(function WeekRow({ days, viewMonth, todayKey, events, calendars, colorOf, maxSlots, onEventClick, onMoreClick, onDayDoubleClick }: WeekProps) {
   const layout = useMemo(() => layoutWeek(events, days[0], maxSlots), [events, days, maxSlots]);
 
   return (
@@ -100,7 +105,7 @@ function WeekRow({ days, viewMonth, today, events, calendars, colorOf, maxSlots,
     >
       {days.map((d, c) => {
         const inMonth = d.getMonth() === viewMonth.getMonth();
-        const isToday = isSameDay(d, today);
+        const isToday = dayKey(d) === todayKey;
         const dow = d.getDay();
         const label = d.getDate() === 1 ? `${d.getMonth() + 1}월 1일` : String(d.getDate());
         return (
@@ -156,4 +161,4 @@ function WeekRow({ days, viewMonth, today, events, calendars, colorOf, maxSlots,
       )}
     </div>
   );
-}
+});

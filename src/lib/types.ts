@@ -100,13 +100,17 @@ export interface Settings {
   windowMode: WindowMode;
   /** 0..1 background opacity of the calendar panel. */
   opacity: number;
-  /** "light" | "dark" | "system" */
+  /** Color scheme: "system" follows the Windows setting. */
   theme: "light" | "dark" | "system";
+  /** Visual style: "glass" = liquid glass (translucent, blur), "flat" = opaque flat design. */
+  style: "glass" | "flat";
   /** 0 = Sunday, 1 = Monday */
   weekStart: 0 | 1;
   /** Minutes between background syncs. */
   syncIntervalMin: number;
   autostart: boolean;
+  /** When auto-started at logon, open the window immediately instead of starting hidden in the tray. */
+  autostartVisible: boolean;
   /** Global default reminder (minutes before start) used when an event has no explicit reminder. */
   defaultReminderMin: number;
   /** Master switch for notifications. */

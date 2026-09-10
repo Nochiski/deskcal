@@ -599,14 +599,29 @@ function DisplayPane({ settings, patch }: { settings: Settings; patch: (p: Parti
           />
           <span className="val">{Math.round(settings.opacity * 100)}%</span>
         </label>
-        <label className="field inline">
+        <div className="field inline">
           <span>테마</span>
-          <select value={settings.theme} onChange={(e) => patch({ theme: e.target.value as Settings["theme"] })}>
-            <option value="system">시스템</option>
-            <option value="light">라이트</option>
-            <option value="dark">다크</option>
-          </select>
-        </label>
+          <Segmented
+            value={settings.theme}
+            onChange={(v) => patch({ theme: v })}
+            options={[
+              { v: "system", label: "Windows 설정 따라가기", title: "Windows의 라이트/다크 모드 설정을 그대로 따릅니다." },
+              { v: "light", label: "라이트" },
+              { v: "dark", label: "다크" },
+            ]}
+          />
+        </div>
+        <div className="field inline">
+          <span>스타일</span>
+          <Segmented
+            value={settings.style ?? "glass"}
+            onChange={(v) => patch({ style: v })}
+            options={[
+              { v: "glass", label: "리퀴드 글래스", swatch: "glass", title: "반투명 유리 질감, 블러와 광택" },
+              { v: "flat", label: "플랫", swatch: "flat", title: "불투명한 단색 표면, 효과 없음" },
+            ]}
+          />
+        </div>
         <label className="field inline">
           <span>주 시작 요일</span>
           <select value={settings.weekStart} onChange={(e) => patch({ weekStart: Number(e.target.value) as 0 | 1 })}>
@@ -625,12 +640,50 @@ function DisplayPane({ settings, patch }: { settings: Settings; patch: (p: Parti
           </select>
         </label>
         <Toggle label="시작 시 자동 실행" desc="Windows 로그인 시 트레이에 자동으로 실행됩니다." checked={settings.autostart} onChange={(v) => patch({ autostart: v })} />
+        {settings.autostart && (
+          <Toggle
+            label="시작할 때 창 바로 표시"
+            desc="끄면 트레이에만 조용히 시작합니다."
+            checked={settings.autostartVisible ?? true}
+            onChange={(v) => patch({ autostartVisible: v })}
+          />
+        )}
       </section>
     </>
   );
 }
 
 // ───────────────────────── bits ─────────────────────────
+
+/** Pill-shaped segmented control (테마 / 스타일 선택). */
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { v: T; label: string; title?: string; swatch?: "glass" | "flat" }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="seg" role="radiogroup">
+      {options.map((o) => (
+        <button
+          key={o.v}
+          type="button"
+          role="radio"
+          aria-checked={value === o.v}
+          title={o.title}
+          className={`seg-btn${value === o.v ? " active" : ""}`}
+          onClick={() => onChange(o.v)}
+        >
+          {o.swatch && <span className={`style-swatch ${o.swatch}`} aria-hidden="true" />}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Toggle({ label, desc, checked, onChange }: { label: string; desc?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
