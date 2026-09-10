@@ -3,6 +3,8 @@ import type {
   AccountInfo,
   CalEvent,
   CalendarInfo,
+  EventInput,
+  IcsFeed,
   Settings,
   SyncResult,
   WindowMode,
@@ -18,15 +20,17 @@ const iso = (y: number, m: number, d: number, h = 0, min = 0) => {
     `${sign}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`
   );
 };
-const day = (y: number, m: number, d: number) =>
-  `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const day = (y: number, m: number, d: number) => {
+  const dt = new Date(y, m - 1, d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+};
 
 const calendars: CalendarInfo[] = [
-  { id: "google:me", provider: "google", remoteId: "me", name: "한상목", color: "#4285f4", owned: true, isHoliday: false },
-  { id: "google:tasks", provider: "google", remoteId: "tasks", name: "Tasks", color: "#4285f4", owned: true, isHoliday: false },
-  { id: "google:bday", provider: "google", remoteId: "bday", name: "생일", color: "#0b8043", owned: true, isHoliday: false },
-  { id: "google:michelo", provider: "google", remoteId: "michelo", name: "Michelo Robotics", color: "#e67c73", owned: false, isHoliday: false },
-  { id: "google:kr", provider: "google", remoteId: "ko.south_korea#holiday", name: "대한민국의 휴일", color: "#0b8043", owned: false, isHoliday: true },
+  { id: "google:me", provider: "google", remoteId: "me", name: "한상목", color: "#4285f4", owned: true, isHoliday: false, canEdit: true },
+  { id: "google:tasks", provider: "google", remoteId: "tasks", name: "Tasks", color: "#4285f4", owned: true, isHoliday: false, canEdit: true },
+  { id: "google:bday", provider: "google", remoteId: "bday", name: "생일", color: "#0b8043", owned: true, isHoliday: false, canEdit: false },
+  { id: "google:michelo", provider: "google", remoteId: "michelo", name: "Michelo Robotics", color: "#e67c73", owned: false, isHoliday: false, canEdit: true },
+  { id: "google:kr", provider: "google", remoteId: "ko.south_korea#holiday", name: "대한민국의 휴일", color: "#0b8043", owned: false, isHoliday: true, canEdit: false },
 ];
 
 const now = new Date();
@@ -34,18 +38,23 @@ const Y = now.getFullYear();
 const M = now.getMonth() + 1;
 
 let idc = 0;
-const mk = (calendarId: string, title: string, start: string, end: string, extra: Partial<CalEvent> = {}): CalEvent => ({
-  id: `${calendarId}:${++idc}:${start}`,
-  calendarId,
-  title,
-  start,
-  end,
-  allDay: start.length === 10,
-  reminders: [],
-  ...extra,
-});
+const mk = (calendarId: string, title: string, start: string, end: string, extra: Partial<CalEvent> = {}): CalEvent => {
+  const remoteId = String(++idc);
+  return {
+    id: `${calendarId}:${remoteId}:${start}`,
+    calendarId,
+    remoteId,
+    editable: calendars.find((c) => c.id === calendarId)?.canEdit ?? false,
+    title,
+    start,
+    end,
+    allDay: start.length === 10,
+    reminders: [],
+    ...extra,
+  };
+};
 
-const events: CalEvent[] = [
+let events: CalEvent[] = [
   mk("google:michelo", "🌴 [최성원] 휴가", day(Y, M, 1), day(Y, M, 2)),
   mk("google:michelo", "[미켈로] 전월 법인카드 고위드", day(Y, M, 1), day(Y, M, 2)),
   mk("google:michelo", "[AI사업융합] 협의체 회의", day(Y, M, 2), day(Y, M, 3)),
@@ -103,15 +112,37 @@ let settings: Settings = {
 let accounts: AccountInfo[] = [
   { provider: "google", label: "sangmok@example.com", connected: true },
   { provider: "apple", label: "", connected: false },
+  { provider: "ics", label: "", connected: false },
 ];
+
+let feeds: IcsFeed[] = [];
+const feedCalendars = (): CalendarInfo[] =>
+  feeds.map((f) => ({
+    id: `ics:${f.id}`,
+    provider: "ics",
+    remoteId: f.id,
+    name: f.name,
+    color: f.color,
+    owned: false,
+    isHoliday: false,
+    canEdit: false,
+  }));
+const syncIcsAccount = () => {
+  accounts = accounts.map((a) =>
+    a.provider === "ics" ? { ...a, connected: feeds.length > 0, label: feeds.length ? `${feeds.length}개 구독` : "" } : a,
+  );
+};
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const loggedIn = () => accounts.some((a) => a.provider !== "ics" && a.connected);
 const result = (): SyncResult => ({
-  calendars: accounts.some((a) => a.connected) ? calendars : [],
-  events: accounts.some((a) => a.connected) ? events : [],
+  calendars: [...(loggedIn() ? calendars : []), ...feedCalendars()],
+  events: loggedIn() ? events : [],
   syncedAt: new Date().toISOString(),
   errors: [],
+  rangeStart: day(Y, M - 1, 1),
+  rangeEnd: day(Y, M + 2, 1),
 });
 
 export const mock = {
@@ -147,4 +178,58 @@ export const mock = {
     window.open(url, "_blank");
   },
   noopListen: async () => () => {},
+
+  // ── write ops ──
+  createEvent: async (input: EventInput) => {
+    await delay(300);
+    if (!input.title.trim()) throw new Error("제목을 입력하세요.");
+    events = [
+      ...events,
+      mk(input.calendarId, input.title, input.start, input.end, {
+        location: input.location,
+        description: input.description,
+        reminders: input.reminders,
+      }),
+    ];
+    return result();
+  },
+  updateEvent: async (calendarId: string, remoteId: string, input: EventInput) => {
+    await delay(300);
+    events = events.map((e) =>
+      e.calendarId === calendarId && e.remoteId === remoteId
+        ? {
+            ...e,
+            id: `${calendarId}:${remoteId}:${input.start}`,
+            title: input.title,
+            start: input.start,
+            end: input.end,
+            allDay: input.allDay,
+            location: input.location,
+            description: input.description,
+            reminders: input.reminders,
+          }
+        : e,
+    );
+    return result();
+  },
+  deleteEvent: async (calendarId: string, remoteId: string) => {
+    await delay(300);
+    events = events.filter((e) => !(e.calendarId === calendarId && e.remoteId === remoteId));
+    return result();
+  },
+
+  // ── ics feeds ──
+  listIcsFeeds: async () => feeds,
+  addIcsFeed: async (name: string, url: string) => {
+    await delay(500);
+    if (!/^(https?|webcal):\/\//i.test(url)) throw new Error("올바른 URL이 아닙니다. (http(s):// 또는 webcal://)");
+    const f: IcsFeed = { id: String(Date.now()), name: name || "iCal 구독", url, color: "#7986cb" };
+    feeds = [...feeds, f];
+    syncIcsAccount();
+    return f;
+  },
+  removeIcsFeed: async (id: string) => {
+    feeds = feeds.filter((f) => f.id !== id);
+    syncIcsAccount();
+  },
 };

@@ -13,9 +13,10 @@ interface Props {
   anchor: AnchorRect;
   onClose: () => void;
   onEventClick: (ev: CalEvent, e: MouseEvent<HTMLElement>) => void;
+  onAdd?: () => void;
 }
 
-export default function DayMore({ day, events, calendars, colorOf, anchor, onClose, onEventClick }: Props) {
+export default function DayMore({ day, events, calendars, colorOf, anchor, onClose, onEventClick, onAdd }: Props) {
   const list = eventsOnDay(events, day);
   return (
     <Popover anchor={anchor} onClose={onClose} width={260} className="daymore">
@@ -40,6 +41,11 @@ export default function DayMore({ day, events, calendars, colorOf, anchor, onClo
         ))}
         {list.length === 0 && <div className="daymore-empty">일정 없음</div>}
       </div>
+      {onAdd && (
+        <button type="button" className="daymore-add" onClick={onAdd}>
+          + 일정 추가
+        </button>
+      )}
     </Popover>
   );
 }

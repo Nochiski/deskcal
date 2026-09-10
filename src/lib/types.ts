@@ -3,7 +3,32 @@
 // Keep in sync with src-tauri/src/model.rs
 // ─────────────────────────────────────────────────────────────
 
-export type Provider = "google" | "apple";
+export type Provider = "google" | "apple" | "ics";
+// google : Google Calendar API (OAuth). Read + write.
+// apple  : iCloud CalDAV (app-specific password). Read + write.
+// ics    : plain iCalendar subscription URL (e.g. Google Calendar "비공개 주소(iCal)"). Read-only.
+
+/** A subscribed iCalendar feed URL (read-only). */
+export interface IcsFeed {
+  id: string;
+  name: string;
+  url: string;
+  color: string;
+}
+
+/** Fields the user can set when creating or editing an event. */
+export interface EventInput {
+  calendarId: string;
+  title: string;
+  /** Same formats as CalEvent.start/end: "YYYY-MM-DD" (all-day, end exclusive) or ISO with offset. */
+  start: string;
+  end: string;
+  allDay: boolean;
+  location?: string;
+  description?: string;
+  /** Minutes before start. Empty = provider/calendar default. */
+  reminders: number[];
+}
 
 /** A calendar (e.g. "한상목", "Tasks", "대한민국의 휴일") coming from a provider. */
 export interface CalendarInfo {
@@ -18,6 +43,8 @@ export interface CalendarInfo {
   owned: boolean;
   /** Holiday-ish calendars (e.g. 대한민국의 휴일) are flagged by the backend. */
   isHoliday: boolean;
+  /** Events can be created/edited/deleted in this calendar (Google owner/writer, iCloud own calendars). */
+  canEdit: boolean;
 }
 
 /** Per-calendar user preferences (persisted in settings). */
@@ -35,6 +62,10 @@ export interface CalEvent {
   /** Unique per occurrence: `${calendarId}:${remoteId}:${startIso}` */
   id: string;
   calendarId: string;
+  /** Provider event id (Google event id / CalDAV resource href). Needed for update/delete. */
+  remoteId: string;
+  /** false for read-only calendars and for recurring-instance rows that cannot be edited (iCloud). */
+  editable: boolean;
   title: string;
   /** ISO-8601 with offset (e.g. "2026-09-01T09:00:00+09:00") or "YYYY-MM-DD" for all-day. */
   start: string;
@@ -90,4 +121,7 @@ export interface SyncResult {
   syncedAt: string;
   /** Non-fatal per-provider errors (e.g. token expired). */
   errors: { provider: Provider; message: string }[];
+  /** Date range this result covers ("YYYY-MM-DD", end exclusive). Absent on legacy caches. */
+  rangeStart?: string;
+  rangeEnd?: string;
 }

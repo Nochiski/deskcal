@@ -10,9 +10,15 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub async fn sync_range(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) -> SyncResult {
     let state = app.state::<AppState>();
-    if state.syncing.swap(true, Ordering::SeqCst) {
-        // Another sync is running; return the cache.
-        return state.cache.lock().unwrap().clone();
+    // If another sync is running (e.g. background), wait for it briefly so callers that just
+    // wrote an event get fresh data instead of the stale cache.
+    let mut waited = 0;
+    while state.syncing.swap(true, Ordering::SeqCst) {
+        if waited >= 100 {
+            return state.cache.lock().unwrap().clone();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        waited += 1;
     }
     let result = do_sync(app, range_start, range_end).await;
     state.syncing.store(false, Ordering::SeqCst);
@@ -102,6 +108,33 @@ async fn do_sync(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) 
         }
     }
 
+    // ── iCal subscription feeds (read-only) ──
+    if !accounts.ics_feeds.is_empty() {
+        let mut set = tokio::task::JoinSet::new();
+        for feed in accounts.ics_feeds.iter().cloned() {
+            let id = crate::feed::calendar_id(&feed.id);
+            let wanted_feed = match settings.calendars.get(&id) {
+                Some(p) => p.visible || p.notify,
+                None => true,
+            };
+            if !wanted_feed {
+                continue;
+            }
+            let http = http.clone();
+            set.spawn(async move { crate::feed::fetch(&http, &feed, range_start, range_end).await });
+        }
+        while let Some(r) = set.join_next().await {
+            match r {
+                Ok(Ok((cal, evs))) => {
+                    calendars.push(cal);
+                    events.extend(evs);
+                }
+                Ok(Err(e)) => errors.push(SyncError { provider: Provider::Ics, message: e }),
+                Err(e) => errors.push(SyncError { provider: Provider::Ics, message: e.to_string() }),
+            }
+        }
+    }
+
     events.sort_by(|a, b| a.start.cmp(&b.start).then(a.title.cmp(&b.title)));
     for e in &errors {
         log::warn!("sync error [{}]: {}", e.provider.as_str(), e.message);
@@ -132,7 +165,7 @@ async fn do_sync(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) 
     result
 }
 
-async fn google_token(
+pub async fn google_token(
     state: &AppState,
     http: &reqwest::Client,
     client_id: &str,

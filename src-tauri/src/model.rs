@@ -7,6 +7,7 @@ use std::collections::HashMap;
 pub enum Provider {
     Google,
     Apple,
+    Ics,
 }
 
 impl Provider {
@@ -14,6 +15,7 @@ impl Provider {
         match self {
             Provider::Google => "google",
             Provider::Apple => "apple",
+            Provider::Ics => "ics",
         }
     }
 }
@@ -28,6 +30,8 @@ pub struct CalendarInfo {
     pub color: String,
     pub owned: bool,
     pub is_holiday: bool,
+    #[serde(default)]
+    pub can_edit: bool,
     /// Default reminder minutes supplied by the provider for this calendar.
     #[serde(default)]
     pub default_reminders: Vec<i64>,
@@ -59,6 +63,10 @@ impl Default for CalendarPrefs {
 pub struct CalEvent {
     pub id: String,
     pub calendar_id: String,
+    #[serde(default)]
+    pub remote_id: String,
+    #[serde(default)]
+    pub editable: bool,
     pub title: String,
     /// ISO-8601 with offset, or YYYY-MM-DD for all-day.
     pub start: String,
@@ -174,6 +182,34 @@ pub struct Accounts {
     pub apple_id: Option<String>,
     /// Discovered CalDAV calendar-home URL for the Apple account.
     pub apple_home_url: Option<String>,
+    /// Subscribed iCalendar feeds (read-only).
+    pub ics_feeds: Vec<IcsFeed>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct IcsFeed {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub color: String,
+}
+
+/// Fields the user can set when creating or editing an event (mirrors EventInput in types.ts).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventInput {
+    pub calendar_id: String,
+    pub title: String,
+    pub start: String,
+    pub end: String,
+    pub all_day: bool,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub reminders: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

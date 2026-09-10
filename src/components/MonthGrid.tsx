@@ -16,9 +16,11 @@ interface Props {
   colorOf: (calendarId: string) => string;
   onEventClick: (ev: CalEvent, e: MouseEvent<HTMLElement>) => void;
   onMoreClick: (day: Date, e: MouseEvent<HTMLElement>) => void;
+  /** Double-click on the empty part of a day cell → create an event on that day. */
+  onDayDoubleClick?: (day: Date) => void;
 }
 
-export default function MonthGrid({ viewMonth, weekStart, events, calendars, colorOf, onEventClick, onMoreClick }: Props) {
+export default function MonthGrid({ viewMonth, weekStart, events, calendars, colorOf, onEventClick, onMoreClick, onDayDoubleClick }: Props) {
   const weeks = useMemo(() => monthGrid(viewMonth, weekStart), [viewMonth, weekStart]);
   const weeksRef = useRef<HTMLDivElement>(null);
   const [rowHeight, setRowHeight] = useState(120);
@@ -67,6 +69,7 @@ export default function MonthGrid({ viewMonth, weekStart, events, calendars, col
             maxSlots={maxSlots}
             onEventClick={onEventClick}
             onMoreClick={onMoreClick}
+            onDayDoubleClick={onDayDoubleClick}
           />
         ))}
       </div>
@@ -84,9 +87,10 @@ interface WeekProps {
   maxSlots: number;
   onEventClick: (ev: CalEvent, e: MouseEvent<HTMLElement>) => void;
   onMoreClick: (day: Date, e: MouseEvent<HTMLElement>) => void;
+  onDayDoubleClick?: (day: Date) => void;
 }
 
-function WeekRow({ days, viewMonth, today, events, calendars, colorOf, maxSlots, onEventClick, onMoreClick }: WeekProps) {
+function WeekRow({ days, viewMonth, today, events, calendars, colorOf, maxSlots, onEventClick, onMoreClick, onDayDoubleClick }: WeekProps) {
   const layout = useMemo(() => layoutWeek(events, days[0], maxSlots), [events, days, maxSlots]);
 
   return (
@@ -100,7 +104,15 @@ function WeekRow({ days, viewMonth, today, events, calendars, colorOf, maxSlots,
         const dow = d.getDay();
         const label = d.getDate() === 1 ? `${d.getMonth() + 1}월 1일` : String(d.getDate());
         return (
-          <div key={c} className={`cell${inMonth ? "" : " out"}`} style={{ gridColumn: c + 1, gridRow: "1 / -1" }}>
+          <div
+            key={c}
+            className={`cell${inMonth ? "" : " out"}`}
+            style={{ gridColumn: c + 1, gridRow: "1 / -1" }}
+            onDoubleClick={(e) => {
+              if (e.target === e.currentTarget) onDayDoubleClick?.(d);
+            }}
+            title={onDayDoubleClick ? "더블클릭: 일정 추가" : undefined}
+          >
             <button
               type="button"
               className={`daynum${isToday ? " today" : ""}${dow === 0 ? " sun" : dow === 6 ? " sat" : ""}${d.getDate() === 1 ? " first" : ""}`}

@@ -42,8 +42,18 @@ fn read_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> T {
 fn write_json<T: serde::Serialize>(path: &Path, value: &T) {
     match serde_json::to_string_pretty(value) {
         Ok(s) => {
+            // Write to a temp file, flush to disk, then atomically replace — so a crash or a
+            // hard kill never leaves a truncated / zero-filled JSON behind.
             let tmp = path.with_extension("json.tmp");
-            if let Err(e) = fs::write(&tmp, s).and_then(|_| fs::rename(&tmp, path)) {
+            let result = (|| -> std::io::Result<()> {
+                use std::io::Write;
+                let mut f = fs::File::create(&tmp)?;
+                f.write_all(s.as_bytes())?;
+                f.sync_all()?;
+                drop(f);
+                fs::rename(&tmp, path)
+            })();
+            if let Err(e) = result {
                 log::error!("failed to write {}: {e}", path.display());
             }
         }
@@ -57,6 +67,11 @@ pub fn load_settings(p: &Paths) -> Settings {
     if s.google.client_id.is_empty() {
         s.google = crate::model::GoogleClient::default();
     }
+    log::info!(
+        "google oauth client: {} (built-in default {})",
+        if s.google.client_id.is_empty() { "not configured" } else { "configured" },
+        if option_env!("DESKCAL_GOOGLE_CLIENT_ID").map(|v| !v.is_empty()).unwrap_or(false) { "present" } else { "absent" }
+    );
     s
 }
 pub fn save_settings(p: &Paths, s: &Settings) {

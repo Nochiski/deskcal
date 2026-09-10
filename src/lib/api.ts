@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AccountInfo, Settings, SyncResult, WindowMode } from "./types";
+import type { AccountInfo, EventInput, IcsFeed, Settings, SyncResult, WindowMode } from "./types";
 import { mock } from "./mock";
 
 /** true when running inside the Tauri webview; false in a plain browser (vite dev). */
@@ -62,3 +62,24 @@ export const onWindowModeChanged = (cb: (m: WindowMode) => void): Promise<Unlist
 /** Emitted when the tray asks the UI to open settings. */
 export const onOpenSettings = (cb: () => void): Promise<UnlistenFn> =>
   isTauri ? listen("open-settings", () => cb()) : mock.noopListen();
+
+// ── Event write operations (Google OAuth / iCloud only; ICS feeds are read-only) ──
+// Each returns a fresh SyncResult for the last synced range so the UI can apply it as a range replace.
+
+export const createEvent = (input: EventInput) =>
+  isTauri ? invoke<SyncResult>("create_event", { input }) : mock.createEvent(input);
+export const updateEvent = (calendarId: string, remoteId: string, input: EventInput) =>
+  isTauri
+    ? invoke<SyncResult>("update_event", { calendarId, remoteId, input })
+    : mock.updateEvent(calendarId, remoteId, input);
+export const deleteEvent = (calendarId: string, remoteId: string) =>
+  isTauri ? invoke<SyncResult>("delete_event", { calendarId, remoteId }) : mock.deleteEvent(calendarId, remoteId);
+
+// ── iCal subscription feeds (read-only, no login needed) ──
+
+export const listIcsFeeds = () => (isTauri ? invoke<IcsFeed[]>("list_ics_feeds") : mock.listIcsFeeds());
+/** Validates by fetching the URL once. `webcal://` is accepted. */
+export const addIcsFeed = (name: string, url: string) =>
+  isTauri ? invoke<IcsFeed>("add_ics_feed", { name, url }) : mock.addIcsFeed(name, url);
+export const removeIcsFeed = (id: string) =>
+  isTauri ? invoke<void>("remove_ics_feed", { id }) : mock.removeIcsFeed(id);

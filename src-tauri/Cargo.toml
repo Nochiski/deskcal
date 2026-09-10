@@ -39,7 +39,9 @@ windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
   "Win32_Graphics_Gdi",
+  "Win32_Graphics_Dwm",
 ] }
+window-vibrancy = "0.6"
 
 [profile.release]
 codegen-units = 1

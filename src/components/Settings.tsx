@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
-import type { AccountInfo, CalendarInfo, CalendarPrefs, Settings, WindowMode } from "../lib/types";
-import { connectApple, connectGoogle, disconnectApple, disconnectGoogle, setWindowMode } from "../lib/api";
+import type { AccountInfo, CalendarInfo, CalendarPrefs, IcsFeed, Settings, WindowMode } from "../lib/types";
+import {
+  addIcsFeed,
+  connectApple,
+  connectGoogle,
+  disconnectApple,
+  disconnectGoogle,
+  listIcsFeeds,
+  removeIcsFeed,
+  saveSettings,
+  setWindowMode,
+} from "../lib/api";
 import { HOLIDAY_GREEN } from "./EventChip";
 
 type Tab = "accounts" | "calendars" | "notify" | "display";
@@ -101,6 +111,8 @@ function AccountsPane({
     setGBusy(true);
     setGErr(null);
     try {
+      // Flush any just-typed OAuth client id/secret before the backend reads them.
+      await saveSettings(settings);
       await connectGoogle();
       onAccountsChanged();
     } catch (e) {
@@ -250,7 +262,118 @@ function AccountsPane({
         )}
         {aErr && <div className="err">{aErr}</div>}
       </section>
+
+      <IcsPane onAccountsChanged={onAccountsChanged} />
     </>
+  );
+}
+
+// ───────────────────────── iCal 구독 ─────────────────────────
+
+function IcsPane({ onAccountsChanged }: { onAccountsChanged: () => void }) {
+  const [feeds, setFeeds] = useState<IcsFeed[] | null>(null);
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reload = async () => {
+    try {
+      setFeeds(await listIcsFeeds());
+    } catch (e) {
+      setErr(String(e));
+      setFeeds([]);
+    }
+  };
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const add = async () => {
+    const u = url.trim();
+    if (!u) {
+      setErr("URL을 입력하세요.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await addIcsFeed(name.trim(), u);
+      setName("");
+      setUrl("");
+      await reload();
+      onAccountsChanged();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async (id: string) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await removeIcsFeed(id);
+      await reload();
+      onAccountsChanged();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="sec">
+      <h3>
+        <FeedIcon /> iCal 구독 (URL)
+      </h3>
+      <p className="help">
+        로그인 없이 캘린더를 <b>읽기 전용</b>으로 볼 수 있습니다. Google 캘린더 → 설정 → 해당 캘린더 →{" "}
+        <b>'비공개 주소(iCal 형식)'</b> URL을 복사해 붙여넣으세요. (<code>webcal://</code> 주소도 가능)
+      </p>
+      {feeds && feeds.length > 0 && (
+        <ul className="feedlist">
+          {feeds.map((f) => (
+            <li key={f.id} className="feedrow">
+              <span className="feed-dot" style={{ background: f.color }} />
+              <span className="feed-name">{f.name}</span>
+              <span className="feed-url" title={f.url}>
+                {f.url}
+              </span>
+              <button type="button" className="btn btn-link btn-sm" onClick={() => void remove(f.id)} disabled={busy}>
+                삭제
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="feed-add">
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="이름 (예: 공휴일)" className="feed-name-input" />
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+          spellCheck={false}
+          onKeyDown={(e) => e.key === "Enter" && void add()}
+        />
+        <button type="button" className="btn btn-primary" onClick={() => void add()} disabled={busy}>
+          {busy ? "확인 중…" : "추가"}
+        </button>
+      </div>
+      {err && <div className="err">{err}</div>}
+    </section>
+  );
+}
+
+function FeedIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M4 11a9 9 0 0 1 9 9" />
+      <path d="M4 4a16 16 0 0 1 16 16" />
+      <circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
   );
 }
 
@@ -292,7 +415,14 @@ function CalendarsPane({
                     {p.visible && <CheckMark />}
                   </span>
                 </label>
-                <span className="calname">{c.name}</span>
+                <span className="calname">
+                  {c.name}
+                  {!c.canEdit && (
+                    <span className="cal-ro" title="읽기 전용 (일정 작성 불가)">
+                      🔒
+                    </span>
+                  )}
+                </span>
                 <label className="swatch" title="색상 변경" style={{ background: color }}>
                   <input type="color" value={toHex6(color)} onChange={(e) => setPrefs(c.id, { color: e.target.value })} />
                 </label>

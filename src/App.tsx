@@ -11,12 +11,13 @@ import {
   saveSettings,
   syncNow,
 } from "./lib/api";
-import { addMonths, dayKey, eventStart, isAllDayString, parseDayKey } from "./lib/dates";
+import { addMonths, dayKey, eventStart, isAllDayString, isSameDay, nextFullHour, parseDayKey } from "./lib/dates";
 import TopBar from "./components/TopBar";
 import MonthGrid from "./components/MonthGrid";
 import EventDetail from "./components/EventDetail";
 import DayMore from "./components/DayMore";
 import SettingsModal from "./components/Settings";
+import EventEditor, { NoWritableCalendar, type EditorDraft } from "./components/EventEditor";
 import type { AnchorRect } from "./components/Popover";
 import { HOLIDAY_GREEN } from "./components/EventChip";
 
@@ -62,6 +63,10 @@ type Popup =
   | { kind: "day"; day: Date; anchor: AnchorRect }
   | null;
 
+type Editor = { kind: "create"; draft: EditorDraft } | { kind: "edit"; ev: CalEvent } | { kind: "blocked" } | null;
+
+const PROVIDER_LABEL: Record<string, string> = { google: "Google", apple: "Apple", ics: "iCal" };
+
 function rectOf(el: HTMLElement): AnchorRect {
   const r = el.getBoundingClientRect();
   return { left: r.left, top: r.top, width: r.width, height: r.height };
@@ -79,6 +84,7 @@ export default function App() {
   const [viewMonth, setViewMonth] = useState(() => addMonths(new Date(), 0));
   const [popup, setPopup] = useState<Popup>(null);
   const [settingsOpen, setSettingsOpen] = useState(() => DEV_PARAMS.has("settings"));
+  const [editor, setEditor] = useState<Editor>(null);
   const loadedRange = useRef<Range | null>(null);
   const syncSeq = useRef(0);
 
@@ -87,6 +93,8 @@ export default function App() {
     setCalendars(r.calendars);
     setSyncedAt(r.syncedAt);
     setSyncErrors(r.errors ?? []);
+    // Background results carry their own range; use it so deletions propagate too.
+    if (!range && r.rangeStart && r.rangeEnd) range = { start: r.rangeStart, end: r.rangeEnd };
     setEvents((prev) => {
       if (!range) {
         // background update: merge by id (keeps events outside the backend's range)
@@ -229,6 +237,65 @@ export default function App() {
   );
   const connected = accounts.some((a) => a.connected);
   const compact = settings.windowMode !== "floating";
+  const canWrite = calendars.some((c) => c.canEdit);
+
+  /** Open the editor for a new event on `day` (today → next full hour, other days → 09:00). */
+  const openCreate = useCallback(
+    (day?: Date, allDay = false) => {
+      if (!canWrite) {
+        setEditor({ kind: "blocked" });
+        return;
+      }
+      const base = day ?? new Date();
+      const start = isSameDay(base, new Date())
+        ? nextFullHour(new Date())
+        : new Date(base.getFullYear(), base.getMonth(), base.getDate(), 9, 0);
+      const end = new Date(start.getTime() + 3600_000);
+      setPopup(null);
+      setEditor({ kind: "create", draft: { start, end, allDay } });
+    },
+    [canWrite],
+  );
+  const openEdit = useCallback((ev: CalEvent) => {
+    setPopup(null);
+    setEditor({ kind: "edit", ev });
+  }, []);
+
+  // Dev-only (browser mock): ?add opens the create editor, ?edit opens the first editable event.
+  const devOpened = useRef(false);
+  useEffect(() => {
+    if (devOpened.current || !canWrite) return;
+    const scenario = DEV_PARAMS.get("scenario");
+    if (scenario && !import.meta.env.PROD) {
+      // ?scenario=create|edit|delete exercises the write path against the mock backend.
+      devOpened.current = true;
+      const ev = events.find((e) => e.editable);
+      const cal = calendars.find((c) => c.canEdit);
+      const today = new Date();
+      const s = new Date(today.getFullYear(), today.getMonth(), 10, 15, 0);
+      const e = new Date(s.getTime() + 3600_000);
+      void import("./lib/api").then(async (api) => {
+        let r: SyncResult | null = null;
+        if (scenario === "create" && cal)
+          r = await api.createEvent({ calendarId: cal.id, title: "✅ 테스트 일정", start: s.toISOString(), end: e.toISOString(), allDay: false, reminders: [10] });
+        if (scenario === "edit" && ev)
+          r = await api.updateEvent(ev.calendarId, ev.remoteId, { calendarId: ev.calendarId, title: "✏️ 수정됨", start: ev.start, end: ev.end, allDay: ev.allDay, reminders: [] });
+        if (scenario === "delete" && ev) r = await api.deleteEvent(ev.calendarId, ev.remoteId);
+        if (r) applyResult(r, null);
+      });
+      return;
+    }
+    if (DEV_PARAMS.has("add")) {
+      devOpened.current = true;
+      openCreate();
+    } else if (DEV_PARAMS.has("edit")) {
+      const ev = events.find((e) => e.editable);
+      if (ev) {
+        devOpened.current = true;
+        openEdit(ev);
+      }
+    }
+  }, [canWrite, events, calendars, openCreate, openEdit, applyResult]);
 
   const onEventClick = useCallback((ev: CalEvent, e: MouseEvent<HTMLElement>) => {
     e.stopPropagation();
@@ -241,7 +308,7 @@ export default function App() {
   const closePopup = useCallback(() => setPopup(null), []);
 
   const errorText = syncErrors.length
-    ? syncErrors.map((e) => `${e.provider === "google" ? "Google" : "Apple"}: ${e.message}`).join(" · ")
+    ? syncErrors.map((e) => `${PROVIDER_LABEL[e.provider] ?? e.provider}: ${e.message}`).join(" · ")
     : null;
 
   return (
@@ -257,6 +324,7 @@ export default function App() {
         onSync={() => void doSync(viewMonth)}
         onSettings={() => setSettingsOpen(true)}
         onHide={() => void hideWindow()}
+        onAdd={() => openCreate()}
       />
 
       {errorText && (
@@ -274,6 +342,7 @@ export default function App() {
           colorOf={colorOf}
           onEventClick={onEventClick}
           onMoreClick={onMoreClick}
+          onDayDoubleClick={(d) => openCreate(d)}
         />
         {settingsLoaded && !connected && events.length === 0 && (
           <div className="empty">
@@ -296,6 +365,7 @@ export default function App() {
           color={colorOf(popup.ev.calendarId)}
           anchor={popup.anchor}
           onClose={closePopup}
+          onEdit={() => openEdit(popup.ev)}
         />
       )}
       {popup?.kind === "day" && (
@@ -307,7 +377,30 @@ export default function App() {
           anchor={popup.anchor}
           onClose={closePopup}
           onEventClick={onEventClick}
+          onAdd={() => openCreate(popup.day)}
         />
+      )}
+
+      {editor?.kind === "create" && (
+        <EventEditor
+          calendars={calendars}
+          colorOf={colorOf}
+          draft={editor.draft}
+          onSaved={(r) => applyResult(r, null)}
+          onClose={() => setEditor(null)}
+        />
+      )}
+      {editor?.kind === "edit" && (
+        <EventEditor
+          calendars={calendars}
+          colorOf={colorOf}
+          event={editor.ev}
+          onSaved={(r) => applyResult(r, null)}
+          onClose={() => setEditor(null)}
+        />
+      )}
+      {editor?.kind === "blocked" && (
+        <NoWritableCalendar onSettings={() => setSettingsOpen(true)} onClose={() => setEditor(null)} />
       )}
 
       {settingsOpen && (

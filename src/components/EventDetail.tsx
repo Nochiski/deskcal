@@ -10,10 +10,19 @@ interface Props {
   color: string;
   anchor: AnchorRect;
   onClose: () => void;
+  /** Opens the editor for this event (only offered when `ev.editable`). */
+  onEdit?: () => void;
 }
 
-export default function EventDetail({ ev, calendar, color, anchor, onClose }: Props) {
+export default function EventDetail({ ev, calendar, color, anchor, onClose, onEdit }: Props) {
   const bg = calendar?.isHoliday ? HOLIDAY_GREEN : color;
+  const readOnlyNote = ev.editable
+    ? null
+    : calendar && !calendar.canEdit
+      ? "읽기 전용 캘린더"
+      : calendar?.provider === "apple"
+        ? "반복 일정은 iCloud에서 수정하세요"
+        : "수정할 수 없는 일정";
   return (
     <Popover anchor={anchor} onClose={onClose} width={320} className="detail">
       <div className="detail-head">
@@ -32,13 +41,21 @@ export default function EventDetail({ ev, calendar, color, anchor, onClose }: Pr
       )}
       {ev.location && <div className="detail-row">📍 {ev.location}</div>}
       {ev.description && <div className="detail-row detail-desc">{ev.description}</div>}
-      {ev.htmlLink && (
-        <div className="detail-actions">
+      <div className="detail-actions">
+        {ev.editable && onEdit ? (
+          <button type="button" className="btn btn-outline btn-sm" onClick={onEdit}>
+            수정
+          </button>
+        ) : (
+          readOnlyNote && <span className="detail-readonly">🔒 {readOnlyNote}</span>
+        )}
+        <span className="editor-spacer" />
+        {ev.htmlLink && (
           <button type="button" className="btn btn-link" onClick={() => openUrl(ev.htmlLink!)}>
             웹에서 열기 ↗
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </Popover>
   );
 }

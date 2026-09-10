@@ -147,3 +147,34 @@ export function monthGrid(viewMonth: Date, weekStart: 0 | 1): Date[][] {
   }
   return rows;
 }
+
+/** Local ISO-8601 with offset, e.g. "2026-09-10T15:00:00+09:00" (seconds always 00). */
+export function toLocalIso(d: Date): string {
+  const pad = (n: number) => String(Math.abs(n)).padStart(2, "0");
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? "+" : "-";
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:00` +
+    `${sign}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`
+  );
+}
+
+/** "HH:mm" of a local Date. */
+export function timeKey(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Combine "YYYY-MM-DD" + "HH:mm" into a local Date. */
+export function combineDayTime(day: string, time: string): Date {
+  const d = parseDayKey(day);
+  const [h, m] = time.split(":").map(Number);
+  d.setHours(h || 0, m || 0, 0, 0);
+  return d;
+}
+
+/** Next full hour after `from` (e.g. 14:23 → 15:00). */
+export function nextFullHour(from: Date): Date {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate(), from.getHours() + 1, 0, 0, 0);
+  return d;
+}

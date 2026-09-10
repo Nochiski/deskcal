@@ -26,7 +26,7 @@ impl VEvent {
 }
 
 /// Unfold continuation lines (CRLF followed by SPACE/HTAB).
-fn unfold(input: &str) -> Vec<String> {
+pub fn unfold(input: &str) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for raw in input.split('\n') {
         let line = raw.trim_end_matches('\r');

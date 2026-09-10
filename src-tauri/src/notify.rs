@@ -84,6 +84,66 @@ fn body_for(ev: &CalEvent, cal_name: &str, lead_min: i64) -> String {
     parts.join("\n")
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(start: &str, all_day: bool, reminders: Vec<i64>) -> CalEvent {
+        CalEvent {
+            id: "x".into(),
+            calendar_id: "google:a".into(),
+            remote_id: "x".into(),
+            editable: true,
+            title: "t".into(),
+            start: start.into(),
+            end: start.into(),
+            all_day,
+            location: None,
+            description: None,
+            reminders,
+            html_link: None,
+        }
+    }
+
+    #[test]
+    fn timed_event_uses_own_reminders() {
+        let s = Settings::default();
+        let e = ev("2026-09-10T15:00:00+09:00", false, vec![30, 5]);
+        let t = triggers(&e, &s);
+        assert_eq!(t.len(), 2);
+        let start = DateTime::parse_from_rfc3339("2026-09-10T15:00:00+09:00").unwrap();
+        assert_eq!(t[0].0, start - Duration::minutes(30));
+        assert_eq!(t[1].1, 5);
+    }
+
+    #[test]
+    fn timed_event_falls_back_to_default_and_can_be_disabled() {
+        let mut s = Settings::default();
+        s.default_reminder_min = 15;
+        let e = ev("2026-09-10T15:00:00+09:00", false, vec![]);
+        assert_eq!(triggers(&e, &s).len(), 1);
+        s.default_reminder_min = -1;
+        assert!(triggers(&e, &s).is_empty());
+    }
+
+    #[test]
+    fn all_day_fires_at_configured_local_time() {
+        let mut s = Settings::default();
+        s.all_day_reminder_time = "08:30".into();
+        let e = ev("2026-09-10", true, vec![]);
+        let t = triggers(&e, &s);
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].0.format("%Y-%m-%d %H:%M").to_string(), "2026-09-10 08:30");
+    }
+
+    #[test]
+    fn body_mentions_lead_time() {
+        let e = ev("2026-09-10T15:00:00+09:00", false, vec![10]);
+        assert!(body_for(&e, "내 캘린더", 10).contains("10분 후 시작"));
+        assert!(body_for(&e, "내 캘린더", 60).contains("1시간 후 시작"));
+    }
+}
+
 pub fn check(app: &AppHandle) {
     let state = app.state::<AppState>();
     let settings = state.settings();

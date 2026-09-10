@@ -11,7 +11,7 @@ use std::time::Duration;
 
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
-const SCOPES: &str = "openid email https://www.googleapis.com/auth/calendar.readonly";
+const SCOPES: &str = "openid email https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events";
 
 const PAGE_OK: &str = "<html><head><meta charset=\"utf-8\"><title>DeskCal</title></head><body style=\"font-family:system-ui;text-align:center;padding-top:80px\"><h2>로그인 완료</h2><p>이 창을 닫고 DeskCal로 돌아가세요.</p></body></html>";
 const PAGE_FAIL: &str = "<html><head><meta charset=\"utf-8\"><title>DeskCal</title></head><body style=\"font-family:system-ui;text-align:center;padding-top:80px\"><h2>로그인 실패</h2><p>DeskCal에서 다시 시도해 주세요.</p></body></html>";
@@ -297,6 +297,7 @@ pub async fn list_calendars(http: &reqwest::Client, token: &str) -> Result<Vec<C
                 || name.contains("휴일")
                 || name.to_lowercase().contains("holiday");
             let owned = c.primary || c.access_role == "owner";
+            let can_edit = c.access_role == "owner" || c.access_role == "writer";
             out.push(CalendarInfo {
                 id: calendar_id(&c.id),
                 provider: Provider::Google,
@@ -305,6 +306,7 @@ pub async fn list_calendars(http: &reqwest::Client, token: &str) -> Result<Vec<C
                 color: c.background_color.unwrap_or_else(|| "#4285f4".into()),
                 owned,
                 is_holiday,
+                can_edit,
                 default_reminders: c
                     .default_reminders
                     .iter()
@@ -420,6 +422,8 @@ pub async fn list_events(
             out.push(CalEvent {
                 id: format!("{}:{}:{}", cal.id, e.id, start),
                 calendar_id: cal.id.clone(),
+                remote_id: e.id.clone(),
+                editable: cal.can_edit,
                 title: e.summary.unwrap_or_else(|| "(제목 없음)".into()),
                 start,
                 end,
@@ -440,4 +444,105 @@ pub async fn list_events(
 
 fn urlencode(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+}
+
+// ── writes (scope: calendar.events) ──
+
+fn event_body(input: &crate::model::EventInput) -> serde_json::Value {
+    use serde_json::json;
+    let when = |s: &str| {
+        if input.all_day {
+            json!({ "date": s })
+        } else {
+            json!({ "dateTime": s })
+        }
+    };
+    let reminders = if input.reminders.is_empty() {
+        json!({ "useDefault": true })
+    } else {
+        json!({
+            "useDefault": false,
+            "overrides": input.reminders.iter().map(|m| json!({ "method": "popup", "minutes": m })).collect::<Vec<_>>()
+        })
+    };
+    json!({
+        "summary": input.title.trim(),
+        "location": input.location.as_deref().map(str::trim).unwrap_or(""),
+        "description": input.description.as_deref().map(str::trim).unwrap_or(""),
+        "start": when(&input.start),
+        "end": when(&input.end),
+        "reminders": reminders,
+    })
+}
+
+async fn check_write(resp: reqwest::Response, what: &str) -> Result<(), String> {
+    let status = resp.status();
+    if status.is_success() || status == reqwest::StatusCode::GONE {
+        return Ok(());
+    }
+    let text = resp.text().await.unwrap_or_default();
+    log::warn!("google {what} failed ({status}): {text}");
+    if status == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!("{what} 권한이 없습니다. 설정에서 Google 계정을 다시 로그인하면 쓰기 권한을 요청합니다."));
+    }
+    Err(format!("Google {what} 실패 ({status})"))
+}
+
+pub async fn create_event(
+    http: &reqwest::Client,
+    token: &str,
+    cal_remote_id: &str,
+    input: &crate::model::EventInput,
+) -> Result<(), String> {
+    let resp = http
+        .post(format!(
+            "https://www.googleapis.com/calendar/v3/calendars/{}/events",
+            urlencode(cal_remote_id)
+        ))
+        .bearer_auth(token)
+        .json(&event_body(input))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    check_write(resp, "일정 생성").await
+}
+
+pub async fn update_event(
+    http: &reqwest::Client,
+    token: &str,
+    cal_remote_id: &str,
+    event_id: &str,
+    input: &crate::model::EventInput,
+) -> Result<(), String> {
+    let resp = http
+        .patch(format!(
+            "https://www.googleapis.com/calendar/v3/calendars/{}/events/{}",
+            urlencode(cal_remote_id),
+            urlencode(event_id)
+        ))
+        .bearer_auth(token)
+        .json(&event_body(input))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    check_write(resp, "일정 수정").await
+}
+
+pub async fn delete_event(
+    http: &reqwest::Client,
+    token: &str,
+    cal_remote_id: &str,
+    event_id: &str,
+) -> Result<(), String> {
+    let resp = http
+        .delete(format!(
+            "https://www.googleapis.com/calendar/v3/calendars/{}/events/{}",
+            urlencode(cal_remote_id),
+            urlencode(event_id)
+        ))
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    check_write(resp, "일정 삭제").await
 }

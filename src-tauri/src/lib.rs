@@ -1,6 +1,8 @@
 mod apple;
 mod commands;
+mod feed;
 mod google;
+mod vevent;
 mod ics;
 mod model;
 mod notify;
@@ -67,6 +69,27 @@ fn schedule_geometry_save(app: &tauri::AppHandle) {
     });
 }
 
+/// Re-attaches the window to the desktop after Explorer restarts (Progman gets recreated and
+/// the re-parented window would otherwise vanish).
+fn start_mode_watchdog(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let mode = app.state::<AppState>().settings().window_mode;
+            if mode == WindowMode::Floating {
+                continue;
+            }
+            let Some(w) = app.get_webview_window("main") else { continue };
+            if !window_mode::is_attached(&w, mode) {
+                log::warn!("window detached from desktop (Explorer restart?) - re-applying {mode:?}");
+                if let Err(e) = window_mode::apply(&w, mode) {
+                    log::warn!("re-apply failed: {e}");
+                }
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let log_targets = [
@@ -107,15 +130,24 @@ pub fn run() {
                 if !(minimized && mode == WindowMode::Floating) {
                     let _ = w.show();
                 }
-                if mode != WindowMode::Floating {
-                    // Let the window finish creating before re-parenting it.
-                    let h = handle.clone();
-                    tauri::async_runtime::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                        commands::apply_window_mode(&h, mode);
-                    });
-                }
+                // Apply the saved mode (glass effect for floating; re-parenting otherwise) once the
+                // window finished creating. At logon Explorer may not have created Progman yet,
+                // so retry for a while.
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    for attempt in 0..30 {
+                        tokio::time::sleep(std::time::Duration::from_millis(if attempt == 0 { 300 } else { 2000 })).await;
+                        let Some(w) = h.get_webview_window("main") else { return };
+                        if window_mode::apply(&w, mode).is_ok() {
+                            if mode != WindowMode::Floating {
+                                commands::apply_window_mode(&h, mode);
+                            }
+                            return;
+                        }
+                    }
+                });
             }
+            start_mode_watchdog(handle.clone());
 
             notify::start(handle.clone());
             sync::start_background(handle.clone());
@@ -144,6 +176,12 @@ pub fn run() {
             commands::set_window_mode,
             commands::hide_window,
             commands::open_external,
+            commands::create_event,
+            commands::update_event,
+            commands::delete_event,
+            commands::list_ics_feeds,
+            commands::add_ics_feed,
+            commands::remove_ics_feed,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

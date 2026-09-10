@@ -1,11 +1,12 @@
-//! Apple iCloud Calendar via CalDAV (Apple ID + app-specific password).
+//! Apple iCloud Calendar via CalDAV (Apple ID + app-specific password). Read + write.
 //!
 //! "Sign in with Apple" only provides identity; calendar data is only reachable through CalDAV,
 //! which requires an app-specific password generated at https://appleid.apple.com.
-use crate::ics::{self, When};
-use crate::model::{CalEvent, CalendarInfo, Provider};
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
-use std::collections::HashSet;
+use crate::ics;
+use crate::model::{CalEvent, CalendarInfo, EventInput, Provider};
+use crate::vevent;
+use chrono::{Duration, NaiveDate};
+use rand::RngCore;
 
 const DISCOVERY_URL: &str = "https://caldav.icloud.com/";
 
@@ -99,7 +100,7 @@ pub async fn list_calendars(
     creds: &AppleCreds,
     home_url: &str,
 ) -> Result<Vec<CalendarInfo>, String> {
-    let body = r#"<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:a="http://apple.com/ns/ical/"><d:prop><d:displayname/><d:resourcetype/><a:calendar-color/><c:supported-calendar-component-set/></d:prop></d:propfind>"#;
+    let body = r#"<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:a="http://apple.com/ns/ical/"><d:prop><d:displayname/><d:resourcetype/><a:calendar-color/><c:supported-calendar-component-set/><d:current-user-privilege-set/></d:prop></d:propfind>"#;
     let (status, text) = dav(http, creds, "PROPFIND", home_url, "1", body).await?;
     check_auth(status)?;
     let doc = roxmltree::Document::parse(&text).map_err(|e| format!("iCloud 응답 파싱 실패: {e}"))?;
@@ -144,7 +145,19 @@ pub async fn list_calendars(
         let color = find_text(resp, "calendar-color")
             .map(|c| if c.len() >= 7 { c[..7].to_string() } else { c })
             .unwrap_or_else(|| "#ff9500".into());
+        let subscribed = types.iter().any(|t| t == "subscribed");
         let owned = !types.iter().any(|t| t == "shared" || t == "subscribed");
+        // Writable unless the server says otherwise via current-user-privilege-set.
+        let privileges: Vec<String> = resp
+            .descendants()
+            .filter(|n| n.is_element() && n.tag_name().name() == "current-user-privilege-set")
+            .flat_map(|n| n.descendants())
+            .filter(|n| n.is_element())
+            .map(|n| n.tag_name().name().to_string())
+            .collect();
+        let can_edit = !subscribed
+            && (privileges.is_empty()
+                || privileges.iter().any(|p| p == "write" || p == "write-content" || p == "all"));
         let is_holiday = name.contains("휴일") || name.to_lowercase().contains("holiday");
         out.push(CalendarInfo {
             id: calendar_id(&url),
@@ -154,6 +167,7 @@ pub async fn list_calendars(
             color,
             owned,
             is_holiday,
+            can_edit,
             default_reminders: vec![],
         });
     }
@@ -198,199 +212,118 @@ pub async fn list_events(
     }
     let doc = roxmltree::Document::parse(&text).map_err(|e| format!("iCloud 응답 파싱 실패: {e}"))?;
     let mut out = Vec::new();
-    for data in doc
+    for resp in doc
         .descendants()
-        .filter(|n| n.is_element() && n.tag_name().name() == "calendar-data")
+        .filter(|n| n.is_element() && n.tag_name().name() == "response")
     {
+        let Some(href) = find_text(resp, "href") else { continue };
+        let href = resolve(&cal.remote_id, &href);
+        let Some(data) = resp
+            .descendants()
+            .find(|n| n.is_element() && n.tag_name().name() == "calendar-data")
+        else {
+            continue;
+        };
         let Some(ics_text) = data.text() else { continue };
         let vevents = ics::parse_events(ics_text);
-        // Overridden instances (RECURRENCE-ID) replace the generated one when expanding locally.
-        let overridden: HashSet<String> = vevents
-            .iter()
-            .filter_map(|v| v.get("RECURRENCE-ID").and_then(ics::parse_when).map(|w| w.to_iso()))
-            .collect();
-        for ev in &vevents {
-            let Some(start_prop) = ev.get("DTSTART") else { continue };
-            let Some(start) = ics::parse_when(start_prop) else { continue };
-            let end = match ev.get("DTEND").and_then(ics::parse_when) {
-                Some(e) => e,
-                None => match ev.value("DURATION").and_then(|d| ics::parse_duration_secs(&d)) {
-                    Some(secs) => start.add(secs),
-                    None => {
-                        if start.is_date() {
-                            start.add(86400)
-                        } else {
-                            start.clone()
-                        }
-                    }
-                },
-            };
-            let uid = ev.value("UID").unwrap_or_default();
-            let title = ev.value("SUMMARY").unwrap_or_else(|| "(제목 없음)".into());
-            let base = CalEvent {
-                id: String::new(),
-                calendar_id: cal.id.clone(),
-                title,
-                start: start.to_iso(),
-                end: end.to_iso(),
-                all_day: start.is_date(),
-                location: ev.value("LOCATION").filter(|s| !s.is_empty()),
-                description: ev.value("DESCRIPTION").filter(|s| !s.is_empty()),
-                reminders: ev.alarms.clone(),
-                html_link: None,
-            };
-            let rrule = ev.value("RRULE");
-            if !expanded && rrule.is_some() && ev.get("RECURRENCE-ID").is_none() {
-                let dur_secs = when_diff_secs(&start, &end);
-                for occ in expand_rrule(&rrule.unwrap(), &start, ev, range_start, range_end) {
-                    let iso = occ.to_iso();
-                    if overridden.contains(&iso) {
-                        continue;
-                    }
-                    let mut e = base.clone();
-                    e.start = iso.clone();
-                    e.end = occ.add(dur_secs).to_iso();
-                    e.id = format!("{}:{}:{}", cal.id, uid, iso);
-                    out.push(e);
-                }
-            } else {
-                let mut e = base;
-                e.id = format!("{}:{}:{}", cal.id, uid, e.start);
-                out.push(e);
-            }
-        }
+        out.extend(vevent::vevents_to_events(
+            &vevents,
+            &cal.id,
+            Some(&href),
+            cal.can_edit,
+            range_start,
+            range_end,
+            !expanded,
+        ));
     }
     Ok(out)
 }
 
-fn when_diff_secs(a: &When, b: &When) -> i64 {
-    match (a, b) {
-        (When::Date(x), When::Date(y)) => (*y - *x).num_seconds(),
-        (When::DateTime(x), When::DateTime(y)) => (*y - *x).num_seconds(),
-        _ => 0,
-    }
+// ── writes ──
+
+fn new_uid() -> String {
+    let mut b = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut b);
+    let hex: String = b.iter().map(|x| format!("{x:02X}")).collect();
+    format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..])
 }
 
-fn when_date(w: &When) -> NaiveDate {
-    match w {
-        When::Date(d) => *d,
-        When::DateTime(dt) => dt.date_naive(),
+async fn put_ics(
+    http: &reqwest::Client,
+    creds: &AppleCreds,
+    href: &str,
+    body: String,
+    create: bool,
+) -> Result<(), String> {
+    let mut req = http
+        .put(href)
+        .basic_auth(&creds.apple_id, Some(&creds.password))
+        .header("Content-Type", "text/calendar; charset=utf-8")
+        .header("User-Agent", "DeskCal/0.1");
+    if create {
+        req = req.header("If-None-Match", "*");
     }
+    let resp = req.body(body).send().await.map_err(|e| format!("iCloud 연결 실패: {e}"))?;
+    let status = resp.status();
+    check_auth(status)?;
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        log::warn!("caldav PUT {href} -> {status}: {text}");
+        return Err(format!("iCloud 저장 실패 ({status})"));
+    }
+    Ok(())
 }
 
-fn weekday_from(s: &str) -> Option<Weekday> {
-    let s = s.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-' || c == '+');
-    Some(match s {
-        "MO" => Weekday::Mon,
-        "TU" => Weekday::Tue,
-        "WE" => Weekday::Wed,
-        "TH" => Weekday::Thu,
-        "FR" => Weekday::Fri,
-        "SA" => Weekday::Sat,
-        "SU" => Weekday::Sun,
-        _ => return None,
-    })
+/// Creates an event in the calendar collection `cal_url`. Returns the new resource href.
+pub async fn create_event(
+    http: &reqwest::Client,
+    creds: &AppleCreds,
+    cal_url: &str,
+    input: &EventInput,
+) -> Result<String, String> {
+    let uid = new_uid();
+    let href = format!("{}{}.ics", cal_url.trim_end_matches('/').to_string() + "/", uid);
+    let body = vevent::build_ics(&uid, input, None)?;
+    put_ics(http, creds, &href, body, true).await?;
+    Ok(href)
 }
 
-/// Local fallback expansion for the common RRULE subset (DAILY/WEEKLY/MONTHLY/YEARLY,
-/// INTERVAL, COUNT, UNTIL, BYDAY for WEEKLY, EXDATE).
-fn expand_rrule(
-    rrule: &str,
-    start: &When,
-    ev: &ics::VEvent,
-    range_start: NaiveDate,
-    range_end: NaiveDate,
-) -> Vec<When> {
-    let mut freq = "";
-    let mut interval: i64 = 1;
-    let mut count: Option<usize> = None;
-    let mut until: Option<NaiveDate> = None;
-    let mut bydays: Vec<Weekday> = Vec::new();
-    for part in rrule.split(';') {
-        let Some((k, v)) = part.split_once('=') else { continue };
-        match k.to_uppercase().as_str() {
-            "FREQ" => freq = v,
-            "INTERVAL" => interval = v.parse().unwrap_or(1).max(1),
-            "COUNT" => count = v.parse().ok(),
-            "UNTIL" => until = NaiveDate::parse_from_str(&v[..8.min(v.len())], "%Y%m%d").ok(),
-            "BYDAY" => bydays = v.split(',').filter_map(weekday_from).collect(),
-            _ => {}
-        }
+/// Replaces the editable properties of the event stored at `href`.
+pub async fn update_event(
+    http: &reqwest::Client,
+    creds: &AppleCreds,
+    href: &str,
+    input: &EventInput,
+) -> Result<(), String> {
+    let resp = http
+        .get(href)
+        .basic_auth(&creds.apple_id, Some(&creds.password))
+        .header("User-Agent", "DeskCal/0.1")
+        .send()
+        .await
+        .map_err(|e| format!("iCloud 연결 실패: {e}"))?;
+    let status = resp.status();
+    check_auth(status)?;
+    if !status.is_success() {
+        return Err(format!("iCloud 일정 조회 실패 ({status})"));
     }
-    let exdates: HashSet<NaiveDate> = ev
-        .props
-        .iter()
-        .filter(|p| p.name == "EXDATE")
-        .flat_map(|p| {
-            p.value
-                .split(',')
-                .filter_map(|v| {
-                    let pp = ics::Prop { name: "EXDATE".into(), params: p.params.clone(), value: v.into() };
-                    ics::parse_when(&pp).map(|w| when_date(&w))
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    let start_date = when_date(start);
-    let mut out = Vec::new();
-    let mut produced = 0usize;
-    let hard_stop = range_end.min(until.unwrap_or(range_end));
-    let freq = freq.to_uppercase();
-    let mut cursor = start_date;
-    let mut guard = 0;
-    while cursor <= hard_stop && guard < 5000 {
-        guard += 1;
-        let candidates: Vec<NaiveDate> = match freq.as_str() {
-            "WEEKLY" if !bydays.is_empty() => {
-                // Week starting at cursor (same weekday as start).
-                (0..7)
-                    .map(|i| cursor + Duration::days(i))
-                    .filter(|d| bydays.contains(&d.weekday()))
-                    .collect()
-            }
-            _ => vec![cursor],
-        };
-        for d in candidates {
-            if d < start_date {
-                continue;
-            }
-            if let Some(c) = count {
-                if produced >= c {
-                    return out;
-                }
-            }
-            if let Some(u) = until {
-                if d > u {
-                    return out;
-                }
-            }
-            produced += 1;
-            if d >= range_start && d < range_end && !exdates.contains(&d) {
-                let secs = (d - start_date).num_days() * 86400;
-                out.push(start.add(secs));
-            }
-        }
-        cursor = match freq.as_str() {
-            "DAILY" => cursor + Duration::days(interval),
-            "WEEKLY" => cursor + Duration::weeks(interval),
-            "MONTHLY" => add_months(cursor, interval as u32),
-            "YEARLY" => add_months(cursor, 12 * interval as u32),
-            _ => break,
-        };
-    }
-    out
+    let existing = resp.text().await.map_err(|e| e.to_string())?;
+    let body = vevent::build_ics("", input, Some(&existing))?;
+    put_ics(http, creds, href, body, false).await
 }
 
-fn add_months(d: NaiveDate, months: u32) -> NaiveDate {
-    let total = d.month0() + months;
-    let year = d.year() + (total / 12) as i32;
-    let month = total % 12 + 1;
-    let mut day = d.day();
-    loop {
-        if let Some(nd) = NaiveDate::from_ymd_opt(year, month, day) {
-            return nd;
-        }
-        day -= 1;
+pub async fn delete_event(http: &reqwest::Client, creds: &AppleCreds, href: &str) -> Result<(), String> {
+    let resp = http
+        .delete(href)
+        .basic_auth(&creds.apple_id, Some(&creds.password))
+        .header("User-Agent", "DeskCal/0.1")
+        .send()
+        .await
+        .map_err(|e| format!("iCloud 연결 실패: {e}"))?;
+    let status = resp.status();
+    check_auth(status)?;
+    if !status.is_success() && status != reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("iCloud 삭제 실패 ({status})"));
     }
+    Ok(())
 }

@@ -80,11 +80,64 @@ mod win {
         let _ = SetWindowPos(hwnd, insert_after, pt.x, pt.y, 0, 0, flags);
     }
 
+    /// True when the window is still parented where `mode` expects it. After an Explorer
+    /// restart Progman/WorkerW are recreated and the window ends up orphaned (invisible).
+    pub fn is_attached(window: &WebviewWindow, mode: WindowMode) -> bool {
+        unsafe {
+            let Ok(hwnd) = hwnd_of(window) else { return true };
+            let parent = GetAncestor(hwnd, GA_PARENT);
+            let Ok(progman) = find_progman() else { return mode == WindowMode::Floating };
+            match mode {
+                WindowMode::Floating => true,
+                WindowMode::Desktop => parent == progman,
+                WindowMode::Wallpaper => {
+                    if parent.0.is_null() || !IsWindow(Some(parent)).as_bool() {
+                        return false;
+                    }
+                    // WorkerW under Progman, a top-level WorkerW, or Progman itself (fallback).
+                    parent == progman || GetAncestor(parent, GA_PARENT) == progman || {
+                        let mut cls = [0u16; 16];
+                        let n = GetClassNameW(parent, &mut cls) as usize;
+                        String::from_utf16_lossy(&cls[..n]) == "WorkerW"
+                    }
+                }
+            }
+        }
+    }
+
+    /// Floating mode: real acrylic blur of whatever is behind the window (the "liquid glass"
+    /// look) plus DWM-rounded corners. Reparented modes sit on the static wallpaper, so the page's
+    /// own translucent CSS is enough there and the system effects are turned off.
+    fn set_glass(window: &WebviewWindow, hwnd: HWND, enabled: bool) {
+        use windows::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+        };
+        let pref = if enabled { DWMWCP_ROUND } else { DWMWCP_DONOTROUND };
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &pref as *const _ as *const c_void,
+                std::mem::size_of_val(&pref) as u32,
+            );
+        }
+        if enabled {
+            if let Err(e) = window_vibrancy::apply_acrylic(window, Some((255, 255, 255, 12))) {
+                log::warn!("acrylic unavailable ({e}); trying blur");
+                let _ = window_vibrancy::apply_blur(window, Some((255, 255, 255, 12)));
+            }
+        } else {
+            let _ = window_vibrancy::clear_acrylic(window);
+            let _ = window_vibrancy::clear_blur(window);
+        }
+    }
+
     pub fn apply(window: &WebviewWindow, mode: WindowMode) -> Result<(), String> {
         unsafe {
             let hwnd = hwnd_of(window)?;
             let mut rect = RECT::default();
             GetWindowRect(hwnd, &mut rect).map_err(|e| e.to_string())?;
+            set_glass(window, hwnd, mode == WindowMode::Floating);
             match mode {
                 WindowMode::Floating => {
                     let _ = SetParent(hwnd, None);
@@ -115,6 +168,16 @@ mod win {
 #[cfg(windows)]
 pub fn apply(window: &WebviewWindow, mode: WindowMode) -> Result<(), String> {
     win::apply(window, mode)
+}
+
+#[cfg(windows)]
+pub fn is_attached(window: &WebviewWindow, mode: WindowMode) -> bool {
+    win::is_attached(window, mode)
+}
+
+#[cfg(not(windows))]
+pub fn is_attached(_window: &WebviewWindow, _mode: WindowMode) -> bool {
+    true
 }
 
 #[cfg(not(windows))]
