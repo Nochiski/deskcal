@@ -1,0 +1,118 @@
+# Builds the Windows installer and publishes a GitHub Release whenever a pull request is merged
+# into main. The release notes are the merged PR's body; the tag is v<version> from
+# src-tauri/tauri.conf.json. If that tag already exists the run stops without publishing, so bump
+# the version in the PR when you want a release.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   DESKCAL_GOOGLE_CLIENT_ID, DESKCAL_GOOGLE_CLIENT_SECRET  — baked into the build by build.rs
+
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Release notes (markdown)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          v=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if the tag already exists
+        id: exists
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release ${{ steps.version.outputs.tag }} already exists; bump the version to publish a new one."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.exists.outputs.skip == 'false'
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.exists.outputs.skip == 'false'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.exists.outputs.skip == 'false'
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        if: steps.exists.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Build installer
+        if: steps.exists.outputs.skip == 'false'
+        env:
+          DESKCAL_GOOGLE_CLIENT_ID: ${{ secrets.DESKCAL_GOOGLE_CLIENT_ID }}
+          DESKCAL_GOOGLE_CLIENT_SECRET: ${{ secrets.DESKCAL_GOOGLE_CLIENT_SECRET }}
+        run: npm run tauri build
+
+      - name: Write release notes
+        if: steps.exists.outputs.skip == 'false'
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MANUAL_NOTES: ${{ github.event.inputs.notes }}
+        run: |
+          {
+            if [ -n "$PR_BODY" ]; then
+              printf '%s\n' "$PR_BODY"
+              printf '\n---\n#%s %s\n' "$PR_NUMBER" "$PR_TITLE"
+            elif [ -n "$MANUAL_NOTES" ]; then
+              printf '%s\n' "$MANUAL_NOTES"
+            else
+              printf 'DeskCal %s\n' "${{ steps.version.outputs.version }}"
+            fi
+            printf '\n설치 파일: DeskCal_%s_x64-setup.exe (서명 없음 — SmartScreen 경고 시 "추가 정보 → 실행")\n' "${{ steps.version.outputs.version }}"
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Publish release
+        if: steps.exists.outputs.skip == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            src-tauri/target/release/bundle/nsis/DeskCal_${{ steps.version.outputs.version }}_x64-setup.exe \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "DeskCal ${{ steps.version.outputs.version }}" \
+            --notes-file release-notes.md
