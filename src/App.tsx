@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { countRender } from "./lib/perf";
 import type { AccountInfo, CalEvent, CalendarInfo, Settings, SyncResult, WindowMode } from "./lib/types";
 import {
   getAccounts,
@@ -102,6 +103,7 @@ function rectOf(el: HTMLElement): AnchorRect {
 }
 
 export default function App() {
+  countRender("App");
   const [settings, setSettings] = useState<Settings>(() => ({
     ...DEFAULT_SETTINGS,
     // dev-only URL overrides applied up front so previews do not animate from the defaults
@@ -264,18 +266,42 @@ export default function App() {
 
   // ── derived ──
   const calMap = useMemo(() => new Map(calendars.map((c) => [c.id, c])), [calendars]);
-  const colorOf = useCallback(
-    (id: string) => {
+  // The grid only cares about colour overrides and visibility, not the whole prefs object —
+  // key the derived values on that content so e.g. toggling a calendar's *notify* flag or
+  // moving the opacity slider leaves the memoized grid untouched.
+  const prefsRef = useRef(settings.calendars);
+  prefsRef.current = settings.calendars;
+  const colorKey = useMemo(
+    () =>
+      Object.entries(settings.calendars)
+        .filter(([, p]) => p.color)
+        .map(([id, p]) => id + "\t" + p.color)
+        .sort()
+        .join("\n"),
+    [settings.calendars],
+  );
+  const hiddenKey = useMemo(
+    () =>
+      Object.entries(settings.calendars)
+        .filter(([, p]) => p.visible === false)
+        .map(([id]) => id)
+        .sort()
+        .join("\n"),
+    [settings.calendars],
+  );
+  const colorOf = useMemo(() => {
+    const prefs = prefsRef.current;
+    return (id: string) => {
       const c = calMap.get(id);
       if (c?.isHoliday) return HOLIDAY_GREEN;
-      return settings.calendars[id]?.color ?? c?.color ?? "#4285f4";
-    },
-    [calMap, settings.calendars],
-  );
-  const visibleEvents = useMemo(
-    () => events.filter((e) => settings.calendars[e.calendarId]?.visible !== false),
-    [events, settings.calendars],
-  );
+      return prefs[id]?.color ?? c?.color ?? "#4285f4";
+    };
+  }, [calMap, colorKey]);
+  const visibleEvents = useMemo(() => {
+    if (!hiddenKey) return events;
+    const prefs = prefsRef.current;
+    return events.filter((e) => prefs[e.calendarId]?.visible !== false);
+  }, [events, hiddenKey]);
   const connected = accounts.some((a) => a.connected);
   const compact = settings.windowMode !== "floating";
   const canWrite = calendars.some((c) => c.canEdit);
@@ -348,6 +374,17 @@ export default function App() {
   }, []);
   const closePopup = useCallback(() => setPopup(null), []);
 
+  // Stable handlers so the memoized TopBar / MonthGrid do not re-render when only popover,
+  // editor, settings-modal or sync state changes in App.
+  const onPrev = useCallback(() => setViewMonth((m) => addMonths(m, -1)), []);
+  const onNext = useCallback(() => setViewMonth((m) => addMonths(m, 1)), []);
+  const onToday = useCallback(() => setViewMonth(addMonths(new Date(), 0)), []);
+  const onSyncClick = useCallback(() => void doSync(viewMonth), [doSync, viewMonth]);
+  const openSettingsModal = useCallback(() => setSettingsOpen(true), []);
+  const onHide = useCallback(() => void hideWindow(), []);
+  const onAdd = useCallback(() => openCreate(), [openCreate]);
+  const onDayDoubleClick = useCallback((d: Date) => openCreate(d), [openCreate]);
+
   const errorText = syncErrors.length
     ? syncErrors.map((e) => `${PROVIDER_LABEL[e.provider] ?? e.provider}: ${e.message}`).join(" · ")
     : null;
@@ -359,13 +396,13 @@ export default function App() {
         syncing={syncing}
         syncedAt={syncedAt}
         compact={compact}
-        onPrev={() => setViewMonth((m) => addMonths(m, -1))}
-        onNext={() => setViewMonth((m) => addMonths(m, 1))}
-        onToday={() => setViewMonth(addMonths(new Date(), 0))}
-        onSync={() => void doSync(viewMonth)}
-        onSettings={() => setSettingsOpen(true)}
-        onHide={() => void hideWindow()}
-        onAdd={() => openCreate()}
+        onPrev={onPrev}
+        onNext={onNext}
+        onToday={onToday}
+        onSync={onSyncClick}
+        onSettings={openSettingsModal}
+        onHide={onHide}
+        onAdd={onAdd}
       />
 
       {errorText && (
@@ -383,7 +420,7 @@ export default function App() {
           colorOf={colorOf}
           onEventClick={onEventClick}
           onMoreClick={onMoreClick}
-          onDayDoubleClick={(d) => openCreate(d)}
+          onDayDoubleClick={onDayDoubleClick}
         />
         {settingsLoaded && !connected && events.length === 0 && (
           <div className="empty">

@@ -1,4 +1,6 @@
+import { memo } from "react";
 import { fmtMonthTitle, fmtSyncedAt } from "../lib/dates";
+import { countRender } from "../lib/perf";
 
 interface Props {
   viewMonth: Date;
@@ -14,7 +16,9 @@ interface Props {
   onAdd: () => void;
 }
 
-export default function TopBar(p: Props) {
+// Memoized: only month, sync state or window mode changes re-render the toolbar.
+const TopBar = memo(function TopBar(p: Props) {
+  countRender("TopBar");
   const syncTitle = p.syncedAt ? `마지막 동기화: ${fmtSyncedAt(p.syncedAt)}` : "동기화";
   return (
     <header className="topbar" data-tauri-drag-region>
@@ -64,7 +68,8 @@ export default function TopBar(p: Props) {
       </div>
     </header>
   );
-}
+});
+export default TopBar;
 
 function Chevron({ dir }: { dir: "left" | "right" }) {
   return (

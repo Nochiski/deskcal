@@ -1,4 +1,5 @@
-import type { MouseEvent } from "react";
+import { useMemo, type MouseEvent } from "react";
+import { countRender } from "../lib/perf";
 import type { CalEvent, CalendarInfo } from "../lib/types";
 import { WEEKDAY_LABELS } from "../lib/dates";
 import { eventsOnDay, isBar } from "../lib/layout";
@@ -17,7 +18,8 @@ interface Props {
 }
 
 export default function DayMore({ day, events, calendars, colorOf, anchor, onClose, onEventClick, onAdd }: Props) {
-  const list = eventsOnDay(events, day);
+  countRender("DayMore");
+  const list = useMemo(() => eventsOnDay(events, day), [events, day]);
   return (
     <Popover anchor={anchor} onClose={onClose} width={260} className="daymore">
       <div className="daymore-head">
