@@ -1,0 +1,186 @@
+//! Shared data model. Keep in sync with `src/lib/types.ts`.
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    Google,
+    Apple,
+}
+
+impl Provider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Provider::Google => "google",
+            Provider::Apple => "apple",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarInfo {
+    pub id: String,
+    pub provider: Provider,
+    pub remote_id: String,
+    pub name: String,
+    pub color: String,
+    pub owned: bool,
+    pub is_holiday: bool,
+    /// Default reminder minutes supplied by the provider for this calendar.
+    #[serde(default)]
+    pub default_reminders: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarPrefs {
+    #[serde(default = "default_true")]
+    pub visible: bool,
+    #[serde(default = "default_true")]
+    pub notify: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for CalendarPrefs {
+    fn default() -> Self {
+        Self { visible: true, notify: true, color: None }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalEvent {
+    pub id: String,
+    pub calendar_id: String,
+    pub title: String,
+    /// ISO-8601 with offset, or YYYY-MM-DD for all-day.
+    pub start: String,
+    pub end: String,
+    pub all_day: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub reminders: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html_link: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountInfo {
+    pub provider: Provider,
+    pub label: String,
+    pub connected: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowMode {
+    #[default]
+    Floating,
+    Desktop,
+    Wallpaper,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleClient {
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default)]
+    pub client_secret: String,
+}
+
+impl Default for GoogleClient {
+    fn default() -> Self {
+        Self {
+            client_id: option_env!("DESKCAL_GOOGLE_CLIENT_ID").unwrap_or("").to_string(),
+            client_secret: option_env!("DESKCAL_GOOGLE_CLIENT_SECRET").unwrap_or("").to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Settings {
+    pub window_mode: WindowMode,
+    pub opacity: f64,
+    pub theme: String,
+    pub week_start: u8,
+    pub sync_interval_min: u64,
+    pub autostart: bool,
+    pub default_reminder_min: i64,
+    pub notifications_enabled: bool,
+    pub all_day_reminder_time: String,
+    pub google: GoogleClient,
+    pub calendars: HashMap<String, CalendarPrefs>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            window_mode: WindowMode::Floating,
+            opacity: 0.96,
+            theme: "system".into(),
+            week_start: 0,
+            sync_interval_min: 15,
+            autostart: false,
+            default_reminder_min: 10,
+            notifications_enabled: true,
+            all_day_reminder_time: "09:00".into(),
+            google: GoogleClient::default(),
+            calendars: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncError {
+    pub provider: Provider,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncResult {
+    pub calendars: Vec<CalendarInfo>,
+    pub events: Vec<CalEvent>,
+    #[serde(default)]
+    pub synced_at: String,
+    #[serde(default)]
+    pub errors: Vec<SyncError>,
+    /// The date range this result covers (YYYY-MM-DD, end exclusive).
+    #[serde(default)]
+    pub range_start: String,
+    #[serde(default)]
+    pub range_end: String,
+}
+
+/// Non-secret account metadata (secrets live in the OS keyring).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Accounts {
+    pub google_email: Option<String>,
+    pub apple_id: Option<String>,
+    /// Discovered CalDAV calendar-home URL for the Apple account.
+    pub apple_home_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WindowGeometry {
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
