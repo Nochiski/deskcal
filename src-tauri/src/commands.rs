@@ -165,13 +165,29 @@ pub fn get_accounts(state: State<'_, AppState>) -> Vec<AccountInfo> {
 pub async fn connect_google(app: AppHandle, state: State<'_, AppState>) -> Result<AccountInfo, String> {
     let s = state.settings();
     let opener = app.clone();
-    let result = google::login(&state.http, &s.google.client_id, &s.google.client_secret, move |url| {
-        opener
-            .opener()
-            .open_url(url, None::<&str>)
-            .map_err(|e| format!("브라우저 열기 실패: {e}"))
-    })
-    .await?;
+    // Abort any previous pending login, then arm a fresh cancel flag for this one.
+    cancel_pending_login(&state);
+    state.login_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
+    let cancel = state.login_cancel.clone();
+    let port_slot = app.clone();
+    let result = google::login(
+        &state.http,
+        &s.google.client_id,
+        &s.google.client_secret,
+        cancel,
+        move |port| {
+            *port_slot.state::<AppState>().login_port.lock().unwrap() = Some(port);
+        },
+        move |url| {
+            opener
+                .opener()
+                .open_url(url, None::<&str>)
+                .map_err(|e| format!("브라우저 열기 실패: {e}"))
+        },
+    )
+    .await;
+    *state.login_port.lock().unwrap() = None;
+    let result = result?;
     let mut a = state.accounts();
     // Re-linking an already linked email replaces its token instead of duplicating the account.
     let id = match a.google_accounts.iter().find(|g| g.email.eq_ignore_ascii_case(&result.email)) {
@@ -192,6 +208,20 @@ pub async fn connect_google(app: AppHandle, state: State<'_, AppState>) -> Resul
     );
     state.set_accounts(a);
     Ok(AccountInfo { provider: Provider::Google, id, label: result.email, connected: true })
+}
+
+fn cancel_pending_login(state: &AppState) {
+    state.login_cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+    if let Some(port) = *state.login_port.lock().unwrap() {
+        google::cancel_login(port);
+    }
+}
+
+/// Aborts a Google login that is waiting for the browser (e.g. the user closed the tab).
+#[tauri::command]
+pub fn cancel_google_login(state: State<'_, AppState>) -> Result<(), String> {
+    cancel_pending_login(&state);
+    Ok(())
 }
 
 #[tauri::command]

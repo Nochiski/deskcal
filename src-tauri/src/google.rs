@@ -38,8 +38,16 @@ struct TokenResponse {
     id_token: Option<String>,
 }
 
+pub const CANCELLED_MSG: &str = "로그인이 취소되었습니다.";
+
 /// Waits for the OAuth redirect on the given listener and returns (code, state).
-fn wait_for_code(listener: TcpListener, timeout: Duration) -> Result<(String, String), String> {
+/// `cancel` is checked after every accepted connection; `cancel_login` wakes the listener by
+/// connecting to it so a cancel takes effect immediately.
+fn wait_for_code(
+    listener: TcpListener,
+    timeout: Duration,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<(String, String), String> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
         if std::time::Instant::now() > deadline {
@@ -49,6 +57,9 @@ fn wait_for_code(listener: TcpListener, timeout: Duration) -> Result<(String, St
             Ok(v) => v,
             Err(e) => return Err(e.to_string()),
         };
+        if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(CANCELLED_MSG.into());
+        }
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let mut buf = vec![0u8; 8192];
         let n = stream.read(&mut buf).unwrap_or(0);
@@ -90,11 +101,22 @@ fn wait_for_code(listener: TcpListener, timeout: Duration) -> Result<(String, St
     }
 }
 
-/// Full interactive login. `open` is called with the URL to open in the browser.
+/// Wakes a pending `login` so it notices `cancel` right away.
+pub fn cancel_login(port: u16) {
+    let _ = std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        Duration::from_millis(500),
+    );
+}
+
+/// Full interactive login. `open` is called with the URL to open in the browser; `on_port`
+/// receives the loopback port so the caller can cancel via `cancel_login`.
 pub async fn login(
     http: &reqwest::Client,
     client_id: &str,
     client_secret: &str,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    on_port: impl FnOnce(u16),
     open: impl FnOnce(String) -> Result<(), String>,
 ) -> Result<LoginResult, String> {
     if client_id.trim().is_empty() {
@@ -112,6 +134,7 @@ pub async fn login(
 
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("로컬 포트 열기 실패: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    on_port(port);
     let redirect_uri = format!("http://127.0.0.1:{port}");
 
     let mut auth = url::Url::parse(AUTH_URL).unwrap();
@@ -129,8 +152,9 @@ pub async fn login(
     open(auth.to_string())?;
 
     let expected_state = state.clone();
+    let cancel_flag = cancel.clone();
     let (code, got_state) =
-        tokio::task::spawn_blocking(move || wait_for_code(listener, Duration::from_secs(300)))
+        tokio::task::spawn_blocking(move || wait_for_code(listener, Duration::from_secs(300), &cancel_flag))
             .await
             .map_err(|e| e.to_string())??;
     if got_state != expected_state {

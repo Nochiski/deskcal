@@ -168,6 +168,7 @@ pub fn run() {
             commands::save_settings,
             commands::get_accounts,
             commands::connect_google,
+            commands::cancel_google_login,
             commands::disconnect_google,
             commands::connect_apple,
             commands::disconnect_apple,

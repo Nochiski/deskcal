@@ -3,6 +3,7 @@ import type { AccountInfo, CalendarInfo, CalendarPrefs, IcsFeed, Settings, Windo
 import {
   addIcsFeed,
   connectApple,
+  cancelGoogleLogin,
   connectGoogle,
   disconnectApple,
   disconnectGoogle,
@@ -118,10 +119,14 @@ function AccountsPane({
       await connectGoogle();
       onAccountsChanged();
     } catch (e) {
-      setGErr(String(e));
+      // A user-initiated cancel is not an error worth showing.
+      if (!String(e).includes("취소")) setGErr(String(e));
     } finally {
       setGBusy(false);
     }
+  };
+  const cancelGoogle = () => {
+    void cancelGoogleLogin();
   };
   const undoGoogle = async (accountId: string) => {
     setGRowBusy(accountId);
@@ -195,7 +200,13 @@ function AccountsPane({
           <button type="button" className={`btn ${googles.length ? "btn-outline" : "btn-primary"}`} onClick={doGoogle} disabled={gBusy}>
             {gBusy ? "브라우저에서 로그인 중…" : googles.length ? "+ Google 계정 추가" : "Google로 로그인"}
           </button>
+          {gBusy && (
+            <button type="button" className="btn btn-outline" onClick={cancelGoogle}>
+              취소
+            </button>
+          )}
         </div>
+        {gBusy && <p className="help">브라우저에서 로그인을 마치면 자동으로 돌아옵니다. 창을 닫았다면 취소를 누르세요.</p>}
         {googles.length > 0 && <p className="help">여러 Google 계정을 동시에 연결할 수 있습니다. 같은 계정으로 다시 로그인하면 권한이 갱신됩니다.</p>}
         {gErr && <div className="err">{gErr}</div>}
         <button type="button" className="btn btn-link disclosure" onClick={() => setAdvOpen((v) => !v)}>

@@ -23,6 +23,9 @@ pub struct AppState {
     pub syncing: AtomicBool,
     pub pending_geometry: Mutex<WindowGeometry>,
     pub geometry_seq: AtomicU64,
+    /// Google login in progress: cancel flag + loopback port (to wake the listener).
+    pub login_cancel: std::sync::Arc<AtomicBool>,
+    pub login_port: Mutex<Option<u16>>,
 }
 
 impl AppState {
@@ -49,6 +52,8 @@ impl AppState {
             syncing: AtomicBool::new(false),
             pending_geometry: Mutex::new(WindowGeometry::default()),
             geometry_seq: AtomicU64::new(0),
+            login_cancel: std::sync::Arc::new(AtomicBool::new(false)),
+            login_port: Mutex::new(None),
         }
     }
 

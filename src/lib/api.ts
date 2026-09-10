@@ -25,6 +25,9 @@ export const getAccounts = () =>
  */
 export const connectGoogle = () =>
   isTauri ? invoke<AccountInfo>("connect_google") : mock.connectGoogle();
+/** Aborts a pending `connectGoogle()` (the browser tab was closed, etc.). The pending promise rejects with "로그인이 취소되었습니다." */
+export const cancelGoogleLogin = () =>
+  isTauri ? invoke<void>("cancel_google_login") : Promise.resolve();
 /** Unlinks one Google account by `AccountInfo.id`. */
 export const disconnectGoogle = (accountId: string) =>
   isTauri ? invoke<void>("disconnect_google", { accountId }) : mock.disconnectGoogle(accountId);
