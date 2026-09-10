@@ -14,6 +14,27 @@ interface Props {
   onEdit?: () => void;
 }
 
+/**
+ * Google (and some CalDAV clients) store descriptions as HTML. Render them as plain text with
+ * line breaks preserved and entities decoded, instead of showing raw tags.
+ */
+export function descriptionToText(raw: string): string {
+  if (!/<[a-z!/][^>]*>/i.test(raw) && !/&[a-z#0-9]+;/i.test(raw)) return raw;
+  const doc = new DOMParser().parseFromString(
+    raw
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, "\n")
+      .replace(/<li[^>]*>/gi, "• "),
+    "text/html",
+  );
+  // Show link targets that differ from their text so nothing is lost.
+  doc.querySelectorAll("a[href]").forEach((a) => {
+    const href = a.getAttribute("href") ?? "";
+    if (href && a.textContent?.trim() !== href) a.textContent = `${a.textContent} (${href})`;
+  });
+  return (doc.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export default function EventDetail({ ev, calendar, color, anchor, onClose, onEdit }: Props) {
   const bg = calendar?.isHoliday ? HOLIDAY_GREEN : color;
   const readOnlyNote = ev.editable
@@ -40,7 +61,11 @@ export default function EventDetail({ ev, calendar, color, anchor, onClose, onEd
         </div>
       )}
       {ev.location && <div className="detail-row">📍 {ev.location}</div>}
-      {ev.description && <div className="detail-row detail-desc">{ev.description}</div>}
+      {ev.description && (
+        <div className="detail-row detail-desc" style={{ whiteSpace: "pre-wrap" }}>
+          {descriptionToText(ev.description)}
+        </div>
+      )}
       <div className="detail-actions">
         {ev.editable && onEdit ? (
           <button type="button" className="btn btn-outline btn-sm" onClick={onEdit}>

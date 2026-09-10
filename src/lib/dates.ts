@@ -110,12 +110,21 @@ export function fmtMonthTitle(d: Date): string {
 /** Human readable range for the detail popover. */
 export function fmtEventRange(ev: CalEvent): string {
   const s = eventStart(ev);
-  if (ev.allDay || isAllDayString(ev.start)) {
-    const last = eventLastDay(ev);
-    if (isSameDay(s, last)) return fmtDateKo(s);
-    return `${fmtDateKo(s)} – ${fmtDateKo(last)}`;
-  }
   const e = eventEnd(ev);
+  // Timed events that span exact midnights (00:00 → 00:00 on a later day) read as whole days.
+  const midnightSpan =
+    !ev.allDay &&
+    !isAllDayString(ev.start) &&
+    s.getHours() === 0 &&
+    s.getMinutes() === 0 &&
+    e.getHours() === 0 &&
+    e.getMinutes() === 0 &&
+    e.getTime() > s.getTime();
+  if (ev.allDay || isAllDayString(ev.start) || midnightSpan) {
+    const last = eventLastDay(ev);
+    if (isSameDay(s, last)) return `${fmtDateKo(s)} · 하루종일`;
+    return `${fmtDateKo(s)} – ${fmtDateKo(last)} · 하루종일`;
+  }
   if (isSameDay(s, e) || e.getTime() <= s.getTime()) {
     return `${fmtDateKo(s)} · ${fmtTimeFull(s)} – ${fmtTimeFull(e)}`;
   }

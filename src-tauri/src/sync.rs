@@ -165,6 +165,28 @@ async fn do_sync(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) 
         });
     }
 
+    // Timed events that run from midnight to a later midnight are really whole-day events
+    // (Google shows them as bars too); normalise them so every view treats them as all-day.
+    for e in events.iter_mut() {
+        if e.all_day {
+            continue;
+        }
+        let (Ok(s), Ok(en)) = (
+            chrono::DateTime::parse_from_rfc3339(&e.start),
+            chrono::DateTime::parse_from_rfc3339(&e.end),
+        ) else {
+            continue;
+        };
+        let s = s.with_timezone(&Local);
+        let en = en.with_timezone(&Local);
+        let at_midnight = |d: &chrono::DateTime<Local>| d.time() == chrono::NaiveTime::MIN;
+        if at_midnight(&s) && at_midnight(&en) && en > s {
+            e.all_day = true;
+            e.start = s.date_naive().to_string();
+            e.end = en.date_naive().to_string();
+        }
+    }
+
     events.sort_by(|a, b| a.start.cmp(&b.start).then(a.title.cmp(&b.title)));
     for e in &errors {
         log::warn!("sync error [{}]: {}", e.provider.as_str(), e.message);
