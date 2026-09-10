@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { countRender } from "../lib/perf";
 import type { AccountInfo, CalendarInfo, CalendarPrefs, IcsFeed, Settings, WindowMode } from "../lib/types";
 import {
   addIcsFeed,
@@ -33,6 +34,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function SettingsModal({ settings, accounts, calendars, onChange, onAccountsChanged, onClose }: Props) {
+  countRender("Settings");
   const [tab, setTab] = useState<Tab>(() => {
     const q = new URLSearchParams(location.search).get("tab") as Tab | null;
     if (q && TABS.some((t) => t.id === q)) return q;
@@ -47,7 +49,13 @@ export default function SettingsModal({ settings, accounts, calendars, onChange,
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const patch = (p: Partial<Settings>) => onChange({ ...settings, ...p });
+  // Stable `patch` (reads the latest settings through a ref) so memoized rows below don't
+  // re-render just because the modal re-rendered.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const patch = useCallback((p: Partial<Settings>) => onChangeRef.current({ ...settingsRef.current, ...p }), []);
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -415,99 +423,134 @@ function CalendarsPane({
   calendars: CalendarInfo[];
   patch: (p: Partial<Settings>) => void;
 }) {
-  const prefsOf = (id: string): CalendarPrefs => settings.calendars[id] ?? { visible: true, notify: true };
-  const setPrefs = (id: string, p: Partial<CalendarPrefs>) =>
-    patch({ calendars: { ...settings.calendars, [id]: { ...prefsOf(id), ...p } } });
-
-  const mine = calendars.filter((c) => c.owned);
-  const others = calendars.filter((c) => !c.owned);
+  countRender("CalendarsPane");
+  // Stable per-row updater: reads the latest prefs via a ref so rows can be memoized.
+  const prefsRef = useRef(settings.calendars);
+  prefsRef.current = settings.calendars;
+  const setPrefs = useCallback(
+    (id: string, p: Partial<CalendarPrefs>) => {
+      const cur = prefsRef.current[id] ?? { visible: true, notify: true };
+      patch({ calendars: { ...prefsRef.current, [id]: { ...cur, ...p } } });
+    },
+    [patch],
+  );
 
   if (calendars.length === 0) {
     return <p className="help">연결된 계정이 없거나 아직 동기화되지 않았습니다. 계정 탭에서 로그인 후 동기화하세요.</p>;
   }
 
-  const accountNames = Array.from(new Set(calendars.map((c) => c.account || "")));
-  const multiAccount = accountNames.length > 1;
-  const accountLabel = (c: CalendarInfo) =>
-    c.account || (c.provider === "apple" ? "iCloud" : c.provider === "ics" ? "iCal" : "Google");
-
-  const Rows = ({ list }: { list: CalendarInfo[] }) => (
-        <ul className="callist">
-          {list.map((c) => {
-            const p = prefsOf(c.id);
-            const color = c.isHoliday ? HOLIDAY_GREEN : (p.color ?? c.color);
-            return (
-              <li key={c.id} className="calrow">
-                <label className="calcheck" title={p.visible ? "숨기기" : "표시"}>
-                  <input type="checkbox" checked={p.visible} onChange={(e) => setPrefs(c.id, { visible: e.target.checked })} />
-                  <span className="calbox" style={{ background: p.visible ? color : "transparent", borderColor: color }}>
-                    {p.visible && <CheckMark />}
-                  </span>
-                </label>
-                <span className="calname">
-                  {c.name}
-                  {!c.canEdit && (
-                    <span className="cal-ro" title="읽기 전용 (일정 작성 불가)">
-                      🔒
-                    </span>
-                  )}
-                </span>
-                <label className="swatch" title="색상 변경" style={{ background: color }}>
-                  <input type="color" value={toHex6(color)} onChange={(e) => setPrefs(c.id, { color: e.target.value })} />
-                </label>
-                <button
-                  type="button"
-                  className={`btn btn-icon bell${p.notify ? " on" : ""}`}
-                  onClick={() => setPrefs(c.id, { notify: !p.notify })}
-                  title={p.notify ? "알림 받는 중 (클릭하여 끄기)" : "알림 꺼짐 (클릭하여 켜기)"}
-                  aria-label="알림 토글"
-                >
-                  <BellIcon off={!p.notify} />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-  );
-
-  const Group = ({ title, list }: { title: string; list: CalendarInfo[] }) => {
-    if (list.length === 0) return null;
-    if (!multiAccount) {
-      return (
-        <section className="sec">
-          <h3>{title}</h3>
-          <Rows list={list} />
-        </section>
-      );
-    }
-    const byAccount = new Map<string, CalendarInfo[]>();
-    for (const c of list) {
-      const k = accountLabel(c);
-      byAccount.set(k, [...(byAccount.get(k) ?? []), c]);
-    }
-    return (
-      <section className="sec">
-        <h3>{title}</h3>
-        {Array.from(byAccount.entries()).map(([acct, cals]) => (
-          <div key={acct} className="calgroup">
-            <div className="calgroup-head" title={acct}>
-              {acct}
-            </div>
-            <Rows list={cals} />
-          </div>
-        ))}
-      </section>
-    );
-  };
+  const mine = calendars.filter((c) => c.owned);
+  const others = calendars.filter((c) => !c.owned);
+  const multiAccount = new Set(calendars.map((c) => c.account || "")).size > 1;
 
   return (
     <>
-      <Group title="내 캘린더" list={mine} />
-      <Group title="다른 캘린더" list={others} />
+      <CalendarGroup title="내 캘린더" list={mine} prefs={settings.calendars} multiAccount={multiAccount} setPrefs={setPrefs} />
+      <CalendarGroup title="다른 캘린더" list={others} prefs={settings.calendars} multiAccount={multiAccount} setPrefs={setPrefs} />
       <p className="help">체크박스 = 표시 여부, 종 아이콘 = 해당 캘린더의 알림 수신 여부입니다.</p>
     </>
   );
 }
+
+const DEFAULT_PREFS: CalendarPrefs = { visible: true, notify: true };
+
+function accountLabel(c: CalendarInfo): string {
+  return c.account || (c.provider === "apple" ? "iCloud" : c.provider === "ics" ? "iCal" : "Google");
+}
+
+// Module-level components (not re-created per render) so React keeps the row DOM between
+// toggles instead of remounting the whole list; rows are memoized on their own prefs.
+function CalendarGroup({
+  title,
+  list,
+  prefs,
+  multiAccount,
+  setPrefs,
+}: {
+  title: string;
+  list: CalendarInfo[];
+  prefs: Settings["calendars"];
+  multiAccount: boolean;
+  setPrefs: (id: string, p: Partial<CalendarPrefs>) => void;
+}) {
+  if (list.length === 0) return null;
+  const rows = (cals: CalendarInfo[]) => (
+    <ul className="callist">
+      {cals.map((c) => (
+        <CalendarRow key={c.id} cal={c} prefs={prefs[c.id] ?? DEFAULT_PREFS} setPrefs={setPrefs} />
+      ))}
+    </ul>
+  );
+  if (!multiAccount) {
+    return (
+      <section className="sec">
+        <h3>{title}</h3>
+        {rows(list)}
+      </section>
+    );
+  }
+  const byAccount = new Map<string, CalendarInfo[]>();
+  for (const c of list) {
+    const k = accountLabel(c);
+    byAccount.set(k, [...(byAccount.get(k) ?? []), c]);
+  }
+  return (
+    <section className="sec">
+      <h3>{title}</h3>
+      {Array.from(byAccount.entries()).map(([acct, cals]) => (
+        <div key={acct} className="calgroup">
+          <div className="calgroup-head" title={acct}>
+            {acct}
+          </div>
+          {rows(cals)}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+const CalendarRow = memo(function CalendarRow({
+  cal: c,
+  prefs: p,
+  setPrefs,
+}: {
+  cal: CalendarInfo;
+  prefs: CalendarPrefs;
+  setPrefs: (id: string, p: Partial<CalendarPrefs>) => void;
+}) {
+  countRender("CalendarRow");
+  const color = c.isHoliday ? HOLIDAY_GREEN : (p.color ?? c.color);
+  return (
+    <li className="calrow">
+      <label className="calcheck" title={p.visible ? "숨기기" : "표시"}>
+        <input type="checkbox" checked={p.visible} onChange={(e) => setPrefs(c.id, { visible: e.target.checked })} />
+        <span className="calbox" style={{ background: p.visible ? color : "transparent", borderColor: color }}>
+          {p.visible && <CheckMark />}
+        </span>
+      </label>
+      <span className="calname">
+        {c.name}
+        {!c.canEdit && (
+          <span className="cal-ro" title="읽기 전용 (일정 작성 불가)">
+            🔒
+          </span>
+        )}
+      </span>
+      <label className="swatch" title="색상 변경" style={{ background: color }}>
+        <input type="color" value={toHex6(color)} onChange={(e) => setPrefs(c.id, { color: e.target.value })} />
+      </label>
+      <button
+        type="button"
+        className={`btn btn-icon bell${p.notify ? " on" : ""}`}
+        onClick={() => setPrefs(c.id, { notify: !p.notify })}
+        title={p.notify ? "알림 받는 중 (클릭하여 끄기)" : "알림 꺼짐 (클릭하여 켜기)"}
+        aria-label="알림 토글"
+      >
+        <BellIcon off={!p.notify} />
+      </button>
+    </li>
+  );
+});
 
 // ───────────────────────── 알림 ─────────────────────────
 
@@ -568,6 +611,7 @@ const MODES: { v: WindowMode; label: string; desc: string }[] = [
 ];
 
 function DisplayPane({ settings, patch }: { settings: Settings; patch: (p: Partial<Settings>) => void }) {
+  countRender("DisplayPane");
   const changeMode = (m: WindowMode) => {
     patch({ windowMode: m });
     void setWindowMode(m);

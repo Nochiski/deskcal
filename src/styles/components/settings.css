@@ -118,7 +118,8 @@
   border-radius: 50%;
   background: var(--knob-bg);
   box-shadow: var(--knob-shadow);
-  transition: left var(--dur-slow) var(--ease), transform var(--dur-fast) var(--ease);
+  /* animate with transform (compositor-only) instead of `left` (layout every frame) */
+  transition: transform var(--dur-slow) var(--ease);
   pointer-events: none;
 }
 .switch:active .knob {
@@ -129,7 +130,10 @@
   box-shadow: var(--inset-highlight), var(--shadow-accent-small);
 }
 .switch.on .knob {
-  left: 18px;
+  transform: translateX(16px);
+}
+.switch.on:active .knob {
+  transform: translateX(16px) scaleX(1.12);
 }
 
 /* radio cards */

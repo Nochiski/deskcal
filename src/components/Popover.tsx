@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { countRender } from "../lib/perf";
 
 export interface AnchorRect {
   left: number;
@@ -17,6 +18,7 @@ interface Props {
 
 /** Floating panel anchored beside an element, clamped to the viewport. */
 export default function Popover({ anchor, onClose, width = 300, children, className }: Props) {
+  countRender("Popover");
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: -9999, top: -9999 });
 

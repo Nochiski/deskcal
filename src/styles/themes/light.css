@@ -26,8 +26,10 @@
   --gloss-root: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0.05));
   --gloss-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 45%);
   --gloss-sheet: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 30%);
-  --gloss-bar: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.04) 50%, rgba(0, 0, 0, 0.06));
-  --gloss-bar-blend: soft-light;
+  /* Plain alpha overlay (no mix-blend-mode): a blend mode on every bar's ::before forced a
+     separate compositing layer + isolation group per chip. Alphas tuned to match the old look. */
+  --gloss-bar: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.03) 50%, rgba(0, 0, 0, 0.05));
+  --gloss-bar-blend: normal;
   --gloss-bar-opacity: 1;
   --gloss-grid: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03));
   --wd-header-bg: rgba(255, 255, 255, 0.12);

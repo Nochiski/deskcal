@@ -98,6 +98,21 @@ button {
   animation: spin 0.9s linear infinite;
 }
 
+/* Respect the OS "reduce motion" setting: no entrance animations or hover/press transitions.
+   (The sync spinner keeps a slow rotation since it is the only progress indicator.) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .spinning svg {
+    animation: spin 1.5s linear infinite !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

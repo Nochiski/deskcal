@@ -1,4 +1,5 @@
-import type { MouseEvent } from "react";
+import { memo, type MouseEvent } from "react";
+import { countRender } from "../lib/perf";
 import type { CalEvent } from "../lib/types";
 import { eventStart, fmtTimeShort } from "../lib/dates";
 
@@ -16,7 +17,10 @@ interface Props {
 
 export const HOLIDAY_GREEN = "#0b8043";
 
-export default function EventChip({ ev, color, holiday, bar, contLeft, contRight, onClick, listStyle }: Props) {
+// Memoized: a week row that re-lays out (e.g. slot count changed) only re-renders the chips whose
+// event / colour / placement actually changed.
+const EventChip = memo(function EventChip({ ev, color, holiday, bar, contLeft, contRight, onClick, listStyle }: Props) {
+  countRender("EventChip");
   const bg = holiday ? HOLIDAY_GREEN : color;
   if (bar) {
     return (
@@ -44,4 +48,5 @@ export default function EventChip({ ev, color, holiday, bar, contLeft, contRight
       <span className="chip-title">{ev.title}</span>
     </button>
   );
-}
+});
+export default EventChip;

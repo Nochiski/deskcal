@@ -1,6 +1,6 @@
 [package]
 name = "deskcal"
-version = "0.1.1"
+version = "0.1.2"
 description = "DeskCal - lightweight desktop calendar for Windows (Google / iCloud)"
 authors = ["Nochiski"]
 edition = "2021"

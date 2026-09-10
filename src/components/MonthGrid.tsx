@@ -1,9 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { countRender } from "../lib/perf";
 import type { CalEvent, CalendarInfo } from "../lib/types";
-import { WEEKDAY_LABELS, dayKey, monthGrid } from "../lib/dates";
+import { WEEKDAY_LABELS, addDays, dayKey, eventFirstDay, eventLastDay, monthGrid } from "../lib/dates";
 import { layoutWeek } from "../lib/layout";
 import EventChip from "./EventChip";
 
+const WEEKDAY_LABELS_MON = [...WEEKDAY_LABELS.slice(1), WEEKDAY_LABELS[0]];
 const DAY_HEAD_H = 26;
 const SLOT_H = 22;
 const CELL_PAD_BOTTOM = 4;
@@ -20,10 +22,51 @@ interface Props {
   onDayDoubleClick?: (day: Date) => void;
 }
 
-export default function MonthGrid({ viewMonth, weekStart, events, calendars, colorOf, onEventClick, onMoreClick, onDayDoubleClick }: Props) {
+/**
+ * Per-week event slices with stable identity: a week whose events (same objects, same order)
+ * did not change gets its previous array back, so its memoized WeekRow skips rendering when
+ * some other week changed.
+ */
+function useWeekEvents(weeks: Date[][], events: CalEvent[]): CalEvent[][] {
+  const cache = useRef<Map<number, CalEvent[]>>(new Map());
+  return useMemo(() => {
+    const next = new Map<number, CalEvent[]>();
+    const out = weeks.map((days) => {
+      const start = days[0];
+      const end = addDays(start, 7);
+      const slice = events.filter((ev) => eventLastDay(ev) >= start && eventFirstDay(ev) < end);
+      const prev = cache.current.get(start.getTime());
+      const same = prev && prev.length === slice.length && prev.every((e, i) => e === slice[i]);
+      const kept = same ? prev : slice;
+      next.set(start.getTime(), kept);
+      return kept;
+    });
+    cache.current = next;
+    return out;
+  }, [weeks, events]);
+}
+
+/** "today" as a day key, refreshed by a single 60s interval so the marker moves at midnight. */
+function useTodayKey(): string {
+  const [key, setKey] = useState(() => dayKey(new Date()));
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const k = dayKey(new Date());
+      setKey((prev) => (prev === k ? prev : k));
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return key;
+}
+
+// Memoized: App re-renders for popover / editor / settings / sync state never reach the grid;
+// every prop it receives is referentially stable unless the data it shows actually changed.
+const MonthGrid = memo(function MonthGrid({ viewMonth, weekStart, events, calendars, colorOf, onEventClick, onMoreClick, onDayDoubleClick }: Props) {
+  countRender("MonthGrid");
   const weeks = useMemo(() => monthGrid(viewMonth, weekStart), [viewMonth, weekStart]);
   const weeksRef = useRef<HTMLDivElement>(null);
   const [rowHeight, setRowHeight] = useState(120);
+  const todayKey = useTodayKey();
 
   useEffect(() => {
     const el = weeksRef.current;
@@ -45,8 +88,8 @@ export default function MonthGrid({ viewMonth, weekStart, events, calendars, col
   }, [weeks.length]);
 
   const maxSlots = Math.max(1, Math.floor((rowHeight - DAY_HEAD_H - CELL_PAD_BOTTOM) / SLOT_H));
-  const todayKey = dayKey(new Date());
-  const labels = weekStart === 1 ? [...WEEKDAY_LABELS.slice(1), WEEKDAY_LABELS[0]] : WEEKDAY_LABELS;
+  const labels = weekStart === 1 ? WEEKDAY_LABELS_MON : WEEKDAY_LABELS;
+  const weekEvents = useWeekEvents(weeks, events);
 
   return (
     <div className="grid">
@@ -61,13 +104,13 @@ export default function MonthGrid({ viewMonth, weekStart, events, calendars, col
         })}
       </div>
       <div className="weeks" ref={weeksRef}>
-        {weeks.map((days) => (
+        {weeks.map((days, i) => (
           <WeekRow
             key={days[0].getTime()}
             days={days}
             viewMonth={viewMonth}
             todayKey={todayKey}
-            events={events}
+            events={weekEvents[i]}
             calendars={calendars}
             colorOf={colorOf}
             maxSlots={maxSlots}
@@ -79,7 +122,8 @@ export default function MonthGrid({ viewMonth, weekStart, events, calendars, col
       </div>
     </div>
   );
-}
+});
+export default MonthGrid;
 
 interface WeekProps {
   days: Date[];
@@ -96,6 +140,7 @@ interface WeekProps {
 
 // Memoized: a sync that changes nothing in this week leaves its DOM untouched.
 const WeekRow = memo(function WeekRow({ days, viewMonth, todayKey, events, calendars, colorOf, maxSlots, onEventClick, onMoreClick, onDayDoubleClick }: WeekProps) {
+  countRender("WeekRow");
   const layout = useMemo(() => layoutWeek(events, days[0], maxSlots), [events, days, maxSlots]);
 
   return (

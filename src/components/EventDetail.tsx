@@ -1,4 +1,5 @@
 import type { CalEvent, CalendarInfo } from "../lib/types";
+import { countRender } from "../lib/perf";
 import { fmtEventRange } from "../lib/dates";
 import { openUrl } from "../lib/api";
 import Popover, { type AnchorRect } from "./Popover";
@@ -36,6 +37,7 @@ export function descriptionToText(raw: string): string {
 }
 
 export default function EventDetail({ ev, calendar, color, anchor, onClose, onEdit }: Props) {
+  countRender("EventDetail");
   const bg = calendar?.isHoliday ? HOLIDAY_GREEN : color;
   const readOnlyNote = ev.editable
     ? null

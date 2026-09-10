@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { countRender } from "../lib/perf";
 import type { CalEvent, CalendarInfo, EventInput, SyncResult } from "../lib/types";
 import { createEvent, deleteEvent, updateEvent } from "../lib/api";
 import {
@@ -53,6 +54,7 @@ function labelOfReminder(m: number): string {
 }
 
 export default function EventEditor({ calendars, colorOf, event, draft, onSaved, onClose }: Props) {
+  countRender("EventEditor");
   const editing = !!event;
   const editable = useMemo(() => calendars.filter((c) => c.canEdit), [calendars]);
   /** Editable calendars grouped by owning account (only used when several accounts exist). */

@@ -58,7 +58,13 @@ src-tauri/src/
 - 로그: `%LOCALAPPDATA%\com.nochiski.deskcal\logs\deskcal.log`
 - 시크릿: Windows 자격 증명 관리자 (`DeskCal` 항목, Google 계정별 `google_refresh_token:<id>`)
 
-## 배포
+## 배포 (자동)
 
-`npm run tauri build`로 만든 `DeskCal_x.y.z_x64-setup.exe`를 GitHub Releases에 첨부합니다.
-서명이 없으므로 사용자에게 SmartScreen 경고가 표시됩니다. 없애려면 코드 서명 인증서가 필요합니다.
+- PR이 `main`에 머지되면 `.github/workflows/release.yml`이 Windows 러너에서 설치 파일을 빌드하고 GitHub Release를 만듭니다.
+  - 태그/제목: `src-tauri/tauri.conf.json`의 `version` → `v0.1.2`, `DeskCal 0.1.2`
+  - 릴리스 노트: **머지된 PR 본문**을 그대로 사용합니다. 사용자에게 보여줄 변경 사항을 PR 본문에 쓰세요.
+  - 같은 버전의 릴리스가 이미 있으면 빌드하지 않고 종료합니다. 릴리스를 내려면 PR에서 버전(`package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`)을 올리세요.
+  - Google 클라이언트는 저장소 시크릿 `DESKCAL_GOOGLE_CLIENT_ID` / `DESKCAL_GOOGLE_CLIENT_SECRET`에서 주입됩니다.
+  - Actions 탭에서 `Release` 워크플로를 수동 실행(workflow_dispatch)할 수도 있습니다.
+- PR마다 `.github/workflows/ci.yml`이 타입 검사·프론트 빌드·Rust 테스트를 돌립니다.
+- 서명이 없으므로 사용자에게 SmartScreen 경고가 표시됩니다. 없애려면 코드 서명 인증서가 필요합니다.
