@@ -184,6 +184,7 @@ pub fn run() {
             commands::hide_window,
             commands::open_external,
             commands::create_event,
+            commands::respond_event,
             commands::update_event,
             commands::delete_event,
             commands::list_ics_feeds,

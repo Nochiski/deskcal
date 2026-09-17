@@ -2,7 +2,7 @@
 use crate::apple::{self, AppleCreds};
 use crate::feed;
 use crate::google;
-use crate::model::{AccountInfo, EventInput, IcsFeed, Provider, Settings, SyncResult, WindowMode};
+use crate::model::{AccountInfo, CalEvent, EventInput, IcsFeed, Provider, ResponseStatus, Settings, SyncResult, WindowMode};
 use crate::state::AppState;
 use crate::store;
 use crate::tray::TrayItems;
@@ -307,6 +307,42 @@ pub fn hide_window(app: AppHandle) -> Result<(), String> {
 }
 
 // ── event writes ──
+
+#[tauri::command]
+pub async fn respond_event(
+    state: State<'_, AppState>,
+    calendar_id: String,
+    remote_id: String,
+    response_status: ResponseStatus,
+) -> Result<CalEvent, String> {
+    let (provider, account, _) = split_calendar_id(&calendar_id)?;
+    if provider != Provider::Google {
+        return Err("초대 응답은 Google로 로그인한 캘린더에서 지원합니다.".into());
+    }
+    let _guard = state.sync_lock.lock().await;
+    let cal = state.cache.lock().unwrap().calendars.iter()
+        .find(|c| c.id == calendar_id).cloned()
+        .ok_or("캘린더를 찾을 수 없습니다. 동기화 후 다시 시도해 주세요.")?;
+    let token = google_access_token(&state, &account).await?;
+    let updated = google::respond_event(&state.http, &token, &cal, &remote_id, response_status).await?;
+    let mut cache = state.cache.lock().unwrap().clone();
+    // Preserve the local time/all-day normalization and stable occurrence id.
+    let mut result = updated.clone();
+    for event in &mut cache.events {
+        if event.calendar_id == calendar_id && event.remote_id == remote_id {
+            event.attendees = updated.attendees.clone();
+            event.organizer = updated.organizer.clone();
+            event.attendees_omitted = updated.attendees_omitted;
+            event.response_status = updated.response_status;
+            event.can_respond = updated.can_respond;
+            event.editable = updated.editable;
+            result = event.clone();
+        }
+    }
+    state.set_cache(cache);
+    // Return the confirmed response immediately; the next sync refreshes other guests too.
+    Ok(result)
+}
 
 #[tauri::command]
 pub async fn create_event(app: AppHandle, state: State<'_, AppState>, input: EventInput) -> Result<SyncResult, String> {

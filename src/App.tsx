@@ -72,7 +72,7 @@ const PROVIDER_LABEL: Record<string, string> = { google: "Google", apple: "Apple
 
 /** Content key: two events with the same key render identically. */
 function eventKey(e: CalEvent): string {
-  return `${e.id}|${e.calendarId}|${e.remoteId}|${e.editable ? 1 : 0}|${e.title}|${e.start}|${e.end}|${e.allDay ? 1 : 0}|${e.location ?? ""}|${e.description ?? ""}|${e.reminders.join(",")}|${e.htmlLink ?? ""}`;
+  return `${e.id}|${e.calendarId}|${e.remoteId}|${e.editable ? 1 : 0}|${e.title}|${e.start}|${e.end}|${e.allDay ? 1 : 0}|${e.location ?? ""}|${e.description ?? ""}|${e.reminders.join(",")}|${e.htmlLink ?? ""}|${JSON.stringify([e.attendees, e.organizer, e.attendeesOmitted, e.responseStatus, e.canRespond, e.recurring])}`;
 }
 function calendarKey(c: CalendarInfo): string {
   return `${c.id}|${c.name}|${c.color}|${c.owned ? 1 : 0}|${c.isHoliday ? 1 : 0}|${c.canEdit ? 1 : 0}|${c.account}`;
@@ -388,6 +388,7 @@ export default function App() {
   const errorText = syncErrors.length
     ? syncErrors.map((e) => `${PROVIDER_LABEL[e.provider] ?? e.provider}: ${e.message}`).join(" · ")
     : null;
+  const detailEvent = popup?.kind === "event" ? events.find((e) => e.id === popup.ev.id) ?? popup.ev : null;
 
   return (
     <div className={`app mode-${settings.windowMode}`}>
@@ -436,14 +437,18 @@ export default function App() {
         )}
       </main>
 
-      {popup?.kind === "event" && (
+      {popup?.kind === "event" && detailEvent && (
         <EventDetail
-          ev={popup.ev}
+          key={detailEvent.id}
+          ev={detailEvent}
           calendar={calMap.get(popup.ev.calendarId)}
           color={colorOf(popup.ev.calendarId)}
           anchor={popup.anchor}
           onClose={closePopup}
-          onEdit={() => openEdit(popup.ev)}
+          onEdit={() => openEdit(detailEvent)}
+          onResponded={(updated) => setEvents((prev) => prev.map((ev) =>
+            ev.calendarId === updated.calendarId && ev.remoteId === updated.remoteId ? updated : ev
+          ))}
         />
       )}
       {popup?.kind === "day" && (

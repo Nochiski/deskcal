@@ -36,6 +36,9 @@ fn all_day_trigger(ev: &CalEvent, settings: &Settings) -> Option<DateTime<Local>
 
 /// All reminder instants for an event, paired with the lead time (minutes) used.
 fn triggers(ev: &CalEvent, settings: &Settings) -> Vec<(DateTime<Local>, i64)> {
+    if ev.response_status == Some(crate::model::ResponseStatus::Declined) {
+        return vec![];
+    }
     if ev.all_day {
         return all_day_trigger(ev, settings).map(|t| vec![(t, 0)]).unwrap_or_default();
     }
@@ -102,6 +105,12 @@ mod tests {
             description: None,
             reminders,
             html_link: None,
+            attendees: Vec::new(),
+            organizer: None,
+            attendees_omitted: false,
+            response_status: None,
+            can_respond: false,
+            recurring: false,
         }
     }
 
@@ -114,6 +123,15 @@ mod tests {
         let start = DateTime::parse_from_rfc3339("2026-09-10T15:00:00+09:00").unwrap();
         assert_eq!(t[0].0, start - Duration::minutes(30));
         assert_eq!(t[1].1, 5);
+    }
+
+    #[test]
+    fn declined_invitations_never_trigger_reminders() {
+        let settings = Settings::default();
+        for mut e in [ev("2026-09-22T10:00:00+09:00", false, vec![10]), ev("2026-09-22", true, vec![])] {
+            e.response_status = Some(crate::model::ResponseStatus::Declined);
+            assert!(triggers(&e, &settings).is_empty());
+        }
     }
 
     #[test]

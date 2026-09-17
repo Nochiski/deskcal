@@ -25,16 +25,27 @@ export default function Popover({ anchor, onClose, width = 300, children, classN
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const margin = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const h = el.offsetHeight;
-    let left = anchor.left + anchor.width + margin;
-    if (left + width > vw - margin) left = anchor.left - width - margin;
-    if (left < margin) left = Math.max(margin, Math.min(vw - width - margin, anchor.left));
-    let top = anchor.top;
-    if (top + h > vh - margin) top = Math.max(margin, vh - h - margin);
-    setPos({ left, top });
+    const reposition = () => {
+      const margin = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const h = el.offsetHeight;
+      let left = anchor.left + anchor.width + margin;
+      if (left + width > vw - margin) left = anchor.left - width - margin;
+      if (left < margin) left = Math.max(margin, Math.min(vw - width - margin, anchor.left));
+      let top = anchor.top;
+      if (top + h > vh - margin) top = Math.max(margin, vh - h - margin);
+      setPos((prev) => prev.left === left && prev.top === top ? prev : { left, top });
+    };
+    reposition();
+    // RSVP feedback and refreshed attendee lists can change the panel height while it is open.
+    const observer = new ResizeObserver(reposition);
+    observer.observe(el);
+    window.addEventListener("resize", reposition);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", reposition);
+    };
   }, [anchor, width]);
 
   useEffect(() => {

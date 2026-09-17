@@ -88,6 +88,24 @@
   background: rgba(255, 255, 255, 0.7);
   opacity: var(--dot-gloss-opacity);
 }
+.chip-response-needsAction .chip-dot {
+  border: 1.5px solid;
+  box-shadow: none;
+}
+.chip-response-needsAction .chip-dot::after {
+  display: none;
+}
+.chip-bar.chip-response-needsAction {
+  outline: 1px dashed var(--fg);
+  outline-offset: -2px;
+}
+.chip-response-declined .chip-title {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+.chip-response-tentative .chip-title {
+  font-style: italic;
+}
 .chip-time {
   flex: none;
   color: var(--fg-muted);

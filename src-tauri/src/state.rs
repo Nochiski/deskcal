@@ -20,7 +20,8 @@ pub struct AppState {
     pub last_range: Mutex<(NaiveDate, NaiveDate)>,
     /// Reminder keys that have already fired ("eventId|minutes").
     pub fired: Mutex<HashSet<String>>,
-    pub syncing: AtomicBool,
+    /// Serialize sync and invitation responses so an older fetch cannot overwrite a new RSVP.
+    pub sync_lock: tokio::sync::Mutex<()>,
     pub pending_geometry: Mutex<WindowGeometry>,
     pub geometry_seq: AtomicU64,
     /// Google login in progress: cancel flag + loopback port (to wake the listener).
@@ -49,7 +50,7 @@ impl AppState {
             google_token: Mutex::new(HashMap::new()),
             last_range: Mutex::new((today - Duration::days(45), today + Duration::days(60))),
             fired: Mutex::new(HashSet::new()),
-            syncing: AtomicBool::new(false),
+            sync_lock: tokio::sync::Mutex::new(()),
             pending_geometry: Mutex::new(WindowGeometry::default()),
             geometry_seq: AtomicU64::new(0),
             login_cancel: std::sync::Arc::new(AtomicBool::new(false)),

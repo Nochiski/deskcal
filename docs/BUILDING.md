@@ -61,7 +61,7 @@ src-tauri/src/
 ## 배포 (자동)
 
 - PR이 `main`에 머지되면 `.github/workflows/release.yml`이 Windows 러너에서 설치 파일을 빌드하고 GitHub Release를 만듭니다.
-  - 태그/제목: `src-tauri/tauri.conf.json`의 `version` → `v0.1.2`, `DeskCal 0.1.2`
+  - 태그/제목: `src-tauri/tauri.conf.json`의 `version` → `v0.1.3`, `DeskCal 0.1.3`
   - 릴리스 노트: **머지된 PR 본문**을 그대로 사용합니다. 사용자에게 보여줄 변경 사항을 PR 본문에 쓰세요.
   - 같은 버전의 릴리스가 이미 있으면 빌드하지 않고 종료합니다. 릴리스를 내려면 PR에서 버전(`package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`)을 올리세요.
   - Google 클라이언트는 저장소 시크릿 `DESKCAL_GOOGLE_CLIENT_ID` / `DESKCAL_GOOGLE_CLIENT_SECRET`에서 주입됩니다.
