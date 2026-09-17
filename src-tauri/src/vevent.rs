@@ -54,6 +54,12 @@ pub fn vevents_to_events(
             description: ev.value("DESCRIPTION").filter(|s| !s.is_empty()),
             reminders: ev.alarms.clone(),
             html_link: None,
+            attendees: Vec::new(),
+            organizer: None,
+            attendees_omitted: false,
+            response_status: None,
+            can_respond: false,
+            recurring: is_recurring,
         };
         let rrule = ev.value("RRULE");
         if expand_locally && rrule.is_some() && ev.get("RECURRENCE-ID").is_none() {

@@ -59,6 +59,22 @@ export interface CalendarPrefs {
   color?: string;
 }
 
+export type ResponseStatus = "needsAction" | "accepted" | "declined" | "tentative";
+export type InvitationResponse = Exclude<ResponseStatus, "needsAction">;
+
+export interface EventOrganizer {
+  email?: string | null;
+  displayName?: string | null;
+  /** The calendar on which this copy appears, which can be a delegated calendar. */
+  isSelf: boolean;
+}
+
+export interface EventAttendee extends EventOrganizer {
+  organizer: boolean;
+  optional: boolean;
+  responseStatus: ResponseStatus;
+}
+
 /** One occurrence of an event, already expanded (no recurrence rules). */
 export interface CalEvent {
   /** Unique per occurrence: `${calendarId}:${remoteId}:${startIso}` */
@@ -80,6 +96,12 @@ export interface CalEvent {
   reminders: number[];
   /** Original web link if available. */
   htmlLink?: string;
+  attendees?: EventAttendee[];
+  organizer?: EventOrganizer;
+  attendeesOmitted?: boolean;
+  responseStatus?: ResponseStatus;
+  canRespond?: boolean;
+  recurring?: boolean;
 }
 
 export interface AccountInfo {

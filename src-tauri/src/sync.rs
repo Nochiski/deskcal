@@ -5,24 +5,12 @@ use crate::model::{CalEvent, CalendarInfo, Provider, SyncError, SyncResult};
 use crate::state::AppState;
 use crate::store;
 use chrono::{Local, NaiveDate, Utc};
-use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub async fn sync_range(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) -> SyncResult {
     let state = app.state::<AppState>();
-    // If another sync is running (e.g. background), wait for it briefly so callers that just
-    // wrote an event get fresh data instead of the stale cache.
-    let mut waited = 0;
-    while state.syncing.swap(true, Ordering::SeqCst) {
-        if waited >= 100 {
-            return state.cache.lock().unwrap().clone();
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        waited += 1;
-    }
-    let result = do_sync(app, range_start, range_end).await;
-    state.syncing.store(false, Ordering::SeqCst);
-    result
+    let _guard = state.sync_lock.lock().await;
+    do_sync(app, range_start, range_end).await
 }
 
 async fn do_sync(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) -> SyncResult {
@@ -153,6 +141,12 @@ async fn do_sync(app: &AppHandle, range_start: NaiveDate, range_end: NaiveDate) 
     // The same remote calendar (e.g. 대한민국의 휴일) can be subscribed from several linked
     // accounts; show each occurrence once by keying on the provider-side ids.
     {
+        // Keep the actionable copy when the same calendar is shared across linked accounts.
+        events.sort_by_key(|e| (
+            settings.calendars.get(&e.calendar_id).is_some_and(|p| !p.visible),
+            !e.can_respond,
+            !e.editable,
+        ));
         let remote_of: std::collections::HashMap<&str, &str> =
             calendars.iter().map(|c| (c.id.as_str(), c.remote_id.as_str())).collect();
         let mut seen: std::collections::HashSet<(String, String, String)> = std::collections::HashSet::new();

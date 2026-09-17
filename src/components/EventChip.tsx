@@ -2,6 +2,7 @@ import { memo, type MouseEvent } from "react";
 import { countRender } from "../lib/perf";
 import type { CalEvent } from "../lib/types";
 import { eventStart, fmtTimeShort } from "../lib/dates";
+import { RESPONSE_LABEL } from "../lib/invitations";
 
 interface Props {
   ev: CalEvent;
@@ -22,13 +23,15 @@ export const HOLIDAY_GREEN = "#0b8043";
 const EventChip = memo(function EventChip({ ev, color, holiday, bar, contLeft, contRight, onClick, listStyle }: Props) {
   countRender("EventChip");
   const bg = holiday ? HOLIDAY_GREEN : color;
+  const responseClass = ev.responseStatus ? ` chip-response-${ev.responseStatus}` : "";
+  const responseTitle = ev.responseStatus ? ` · ${RESPONSE_LABEL[ev.responseStatus]}` : "";
   if (bar) {
     return (
       <button
         type="button"
-        className={`chip chip-bar${contLeft ? " cont-l" : ""}${contRight ? " cont-r" : ""}${listStyle ? " chip-list" : ""}`}
+        className={`chip chip-bar${contLeft ? " cont-l" : ""}${contRight ? " cont-r" : ""}${listStyle ? " chip-list" : ""}${responseClass}`}
         style={{ background: bg }}
-        title={ev.title}
+        title={`${ev.title}${responseTitle}`}
         onClick={(e) => onClick(ev, e)}
       >
         <span className="chip-title">{ev.title}</span>
@@ -39,11 +42,11 @@ const EventChip = memo(function EventChip({ ev, color, holiday, bar, contLeft, c
   return (
     <button
       type="button"
-      className={`chip chip-timed${listStyle ? " chip-list" : ""}`}
-      title={`${t} ${ev.title}`}
+      className={`chip chip-timed${listStyle ? " chip-list" : ""}${responseClass}`}
+      title={`${t} ${ev.title}${responseTitle}`}
       onClick={(e) => onClick(ev, e)}
     >
-      <span className="chip-dot" style={{ background: bg }} />
+      <span className="chip-dot" style={{ background: ev.responseStatus === "needsAction" ? "transparent" : bg, borderColor: bg }} />
       <span className="chip-time">{t}</span>
       <span className="chip-title">{ev.title}</span>
     </button>

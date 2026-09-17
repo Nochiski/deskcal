@@ -5,6 +5,7 @@ import type {
   CalendarInfo,
   EventInput,
   IcsFeed,
+  InvitationResponse,
   Settings,
   SyncResult,
   WindowMode,
@@ -83,6 +84,18 @@ const mk = (calendarId: string, title: string, start: string, end: string, extra
 };
 
 let events: CalEvent[] = [
+  mk("google:a1:me", "[초대] 파트너 미팅", iso(Y, M, 22, 10), iso(Y, M, 22, 11, 30), {
+    editable: false,
+    canRespond: true,
+    responseStatus: "needsAction",
+    organizer: { email: "host@example.com", displayName: "주최자", isSelf: false },
+    attendees: [
+      { email: "host@example.com", displayName: "주최자", isSelf: false, organizer: true, optional: false, responseStatus: "accepted" },
+      { email: "colleague@example.com", displayName: "동료", isSelf: false, organizer: false, optional: false, responseStatus: "accepted" },
+      { email: "me@example.com", displayName: "나", isSelf: true, organizer: false, optional: false, responseStatus: "needsAction" },
+    ],
+    description: "미팅 아젠다를 함께 확인해 주세요.\n\n1. 진행 상황 공유\n2. 다음 일정 논의",
+  }),
   mk("google:a1:michelo", "🌴 [최성원] 휴가", day(Y, M, 1), day(Y, M, 2)),
   mk("google:a1:michelo", "[미켈로] 전월 법인카드 고위드", day(Y, M, 1), day(Y, M, 2)),
   mk("google:a1:michelo", "[AI사업융합] 협의체 회의", day(Y, M, 2), day(Y, M, 3)),
@@ -228,6 +241,18 @@ export const mock = {
   noopListen: async () => () => {},
 
   // ── write ops ──
+  respondEvent: async (calendarId: string, remoteId: string, responseStatus: InvitationResponse) => {
+    await delay(300);
+    const event = events.find((e) => e.calendarId === calendarId && e.remoteId === remoteId);
+    if (!event?.canRespond) throw new Error("이 일정에는 응답할 수 없습니다.");
+    const updated: CalEvent = {
+      ...event,
+      responseStatus,
+      attendees: event.attendees?.map((a) => a.isSelf ? { ...a, responseStatus } : a),
+    };
+    events = events.map((e) => e === event ? updated : e);
+    return updated;
+  },
   createEvent: async (input: EventInput) => {
     await delay(300);
     if (!input.title.trim()) throw new Error("제목을 입력하세요.");

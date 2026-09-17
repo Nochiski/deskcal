@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AccountInfo, EventInput, IcsFeed, Settings, SyncResult, WindowMode } from "./types";
+import type { AccountInfo, CalEvent, EventInput, IcsFeed, InvitationResponse, Settings, SyncResult, WindowMode } from "./types";
 import { mock } from "./mock";
 
 /** true when running inside the Tauri webview; false in a plain browser (vite dev). */
@@ -81,6 +81,11 @@ export const updateEvent = (calendarId: string, remoteId: string, input: EventIn
     : mock.updateEvent(calendarId, remoteId, input);
 export const deleteEvent = (calendarId: string, remoteId: string) =>
   isTauri ? invoke<SyncResult>("delete_event", { calendarId, remoteId }) : mock.deleteEvent(calendarId, remoteId);
+
+export const respondEvent = (calendarId: string, remoteId: string, responseStatus: InvitationResponse) =>
+  isTauri
+    ? invoke<CalEvent>("respond_event", { calendarId, remoteId, responseStatus })
+    : mock.respondEvent(calendarId, remoteId, responseStatus);
 
 // ── iCal subscription feeds (read-only, no login needed) ──
 

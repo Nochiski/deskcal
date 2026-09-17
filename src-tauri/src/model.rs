@@ -61,6 +61,40 @@ impl Default for CalendarPrefs {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ResponseStatus {
+    #[default]
+    NeedsAction,
+    Accepted,
+    Declined,
+    Tentative,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventOrganizer {
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    #[serde(default, alias = "self")]
+    pub is_self: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventAttendee {
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    #[serde(default, alias = "self")]
+    pub is_self: bool,
+    #[serde(default)]
+    pub organizer: bool,
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(default)]
+    pub response_status: ResponseStatus,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CalEvent {
@@ -83,6 +117,19 @@ pub struct CalEvent {
     pub reminders: Vec<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub html_link: Option<String>,
+    #[serde(default)]
+    pub attendees: Vec<EventAttendee>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organizer: Option<EventOrganizer>,
+    #[serde(default)]
+    pub attendees_omitted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_status: Option<ResponseStatus>,
+    /// Responding to an invitation does not require permission to edit the event's details.
+    #[serde(default)]
+    pub can_respond: bool,
+    #[serde(default)]
+    pub recurring: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

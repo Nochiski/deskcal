@@ -1,5 +1,5 @@
-//! Google: OAuth 2.0 (PKCE + loopback redirect) and Calendar API v3 (read-only).
-use crate::model::{CalEvent, CalendarInfo, Provider};
+//! Google: OAuth 2.0 (PKCE + loopback redirect) and Calendar API v3 (read/write).
+use crate::model::{CalEvent, CalendarInfo, EventAttendee, EventOrganizer, Provider, ResponseStatus};
 use base64::Engine;
 use chrono::{DateTime, NaiveDate, Utc};
 use rand::RngCore;
@@ -12,6 +12,9 @@ use std::time::Duration;
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const SCOPES: &str = "openid email https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events";
+
+#[cfg(test)]
+mod tests;
 
 const PAGE_OK: &str = "<html><head><meta charset=\"utf-8\"><title>DeskCal</title></head><body style=\"font-family:system-ui;text-align:center;padding-top:80px\"><h2>로그인 완료</h2><p>이 창을 닫고 DeskCal로 돌아가세요.</p></body></html>";
 const PAGE_FAIL: &str = "<html><head><meta charset=\"utf-8\"><title>DeskCal</title></head><body style=\"font-family:system-ui;text-align:center;padding-top:80px\"><h2>로그인 실패</h2><p>DeskCal에서 다시 시도해 주세요.</p></body></html>";
@@ -376,6 +379,15 @@ struct GEvent {
     reminders: Option<GReminders>,
     #[serde(rename = "eventType")]
     event_type: Option<String>,
+    #[serde(default)]
+    attendees: Vec<EventAttendee>,
+    organizer: Option<EventOrganizer>,
+    #[serde(rename = "attendeesOmitted", default)]
+    attendees_omitted: bool,
+    #[serde(rename = "guestsCanModify", default)]
+    guests_can_modify: bool,
+    #[serde(rename = "recurringEventId")]
+    recurring_event_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -400,19 +412,31 @@ pub async fn list_events(
     range_start: NaiveDate,
     range_end: NaiveDate,
 ) -> Result<Vec<CalEvent>, String> {
+    list_events_at(http, token, cal, range_start, range_end, &format!(
+        "https://www.googleapis.com/calendar/v3/calendars/{}/events",
+        urlencode(&cal.remote_id)
+    )).await
+}
+
+async fn list_events_at(
+    http: &reqwest::Client,
+    token: &str,
+    cal: &CalendarInfo,
+    range_start: NaiveDate,
+    range_end: NaiveDate,
+    endpoint: &str,
+) -> Result<Vec<CalEvent>, String> {
     let time_min = format!("{}T00:00:00Z", range_start - chrono::Duration::days(1));
     let time_max = format!("{}T00:00:00Z", range_end + chrono::Duration::days(1));
     let mut out = Vec::new();
     let mut page: Option<String> = None;
     loop {
         let mut req = http
-            .get(format!(
-                "https://www.googleapis.com/calendar/v3/calendars/{}/events",
-                urlencode(&cal.remote_id)
-            ))
+            .get(endpoint)
             .bearer_auth(token)
             .query(&[
                 ("singleEvents", "true"),
+                ("showHiddenInvitations", "true"),
                 ("orderBy", "startTime"),
                 ("maxResults", "2500"),
                 ("timeMin", time_min.as_str()),
@@ -426,50 +450,58 @@ pub async fn list_events(
             return Err(format!("'{}' 일정 조회 실패 ({})", cal.name, resp.status()));
         }
         let body: EventsResponse = resp.json().await.map_err(|e| e.to_string())?;
-        for e in body.items {
-            if e.status == "cancelled" {
-                continue;
-            }
-            if e.event_type.as_deref() == Some("workingLocation") {
-                continue;
-            }
-            let (Some(s), Some(en)) = (e.start, e.end) else { continue };
-            let (start, end, all_day) = match (s.date, s.date_time, en.date, en.date_time) {
-                (Some(sd), _, Some(ed), _) => (sd, ed, true),
-                (_, Some(sdt), _, Some(edt)) => (sdt, edt, false),
-                (_, Some(sdt), _, None) => (sdt.clone(), sdt, false),
-                _ => continue,
-            };
-            let reminders = match e.reminders {
-                Some(r) if !r.use_default => r
-                    .overrides
-                    .iter()
-                    .filter(|x| x.method == "popup")
-                    .map(|x| x.minutes)
-                    .collect(),
-                _ => cal.default_reminders.clone(),
-            };
-            out.push(CalEvent {
-                id: format!("{}:{}:{}", cal.id, e.id, start),
-                calendar_id: cal.id.clone(),
-                remote_id: e.id.clone(),
-                editable: cal.can_edit,
-                title: e.summary.unwrap_or_else(|| "(제목 없음)".into()),
-                start,
-                end,
-                all_day,
-                location: e.location.filter(|s| !s.is_empty()),
-                description: e.description.filter(|s| !s.is_empty()),
-                reminders,
-                html_link: e.html_link,
-            });
-        }
+        out.extend(body.items.into_iter().filter_map(|e| to_event(e, cal)));
         match body.next_page_token {
             Some(p) => page = Some(p),
             None => break,
         }
     }
     Ok(out)
+}
+
+fn to_event(e: GEvent, cal: &CalendarInfo) -> Option<CalEvent> {
+    if e.status == "cancelled" || e.event_type.as_deref() == Some("workingLocation") {
+        return None;
+    }
+    let own_attendee = e.attendees.iter().find(|a| a.is_self);
+    let is_organizer = e.organizer.as_ref().is_some_and(|o| o.is_self)
+        || own_attendee.is_some_and(|a| a.organizer);
+    let response_status = own_attendee.map(|a| a.response_status);
+    let can_respond = cal.can_edit && !is_organizer
+        && own_attendee.is_some_and(|a| a.email.as_ref().is_some_and(|email| !email.is_empty()));
+    let editable = cal.can_edit && (is_organizer || e.guests_can_modify || e.organizer.is_none());
+    let (s, en) = (e.start?, e.end?);
+    let (start, end, all_day) = match (s.date, s.date_time, en.date, en.date_time) {
+        (Some(sd), _, Some(ed), _) => (sd, ed, true),
+        (_, Some(sdt), _, Some(edt)) => (sdt, edt, false),
+        (_, Some(sdt), _, None) => (sdt.clone(), sdt, false),
+        _ => return None,
+    };
+    let reminders = match e.reminders {
+        Some(r) if !r.use_default => r.overrides.iter()
+            .filter(|x| x.method == "popup").map(|x| x.minutes).collect(),
+        _ => cal.default_reminders.clone(),
+    };
+    Some(CalEvent {
+        id: format!("{}:{}:{}", cal.id, e.id, start),
+        calendar_id: cal.id.clone(),
+        remote_id: e.id,
+        editable,
+        title: e.summary.unwrap_or_else(|| "(제목 없음)".into()),
+        start,
+        end,
+        all_day,
+        location: e.location.filter(|s| !s.is_empty()),
+        description: e.description.filter(|s| !s.is_empty()),
+        reminders,
+        html_link: e.html_link,
+        attendees: e.attendees,
+        organizer: e.organizer,
+        attendees_omitted: e.attendees_omitted,
+        response_status,
+        can_respond,
+        recurring: e.recurring_event_id.is_some(),
+    })
 }
 
 fn urlencode(s: &str) -> String {
@@ -507,7 +539,7 @@ fn event_body(input: &crate::model::EventInput) -> serde_json::Value {
 
 async fn check_write(resp: reqwest::Response, what: &str) -> Result<(), String> {
     let status = resp.status();
-    if status.is_success() || status == reqwest::StatusCode::GONE {
+    if status.is_success() || (what == "일정 삭제" && status == reqwest::StatusCode::GONE) {
         return Ok(());
     }
     let text = resp.text().await.unwrap_or_default();
@@ -516,6 +548,54 @@ async fn check_write(resp: reqwest::Response, what: &str) -> Result<(), String> 
         return Err(format!("{what} 권한이 없습니다. 설정에서 Google 계정을 다시 로그인하면 쓰기 권한을 요청합니다."));
     }
     Err(format!("Google {what} 실패 ({status})"))
+}
+
+pub async fn respond_event(
+    http: &reqwest::Client,
+    token: &str,
+    cal: &CalendarInfo,
+    event_id: &str,
+    response_status: ResponseStatus,
+) -> Result<CalEvent, String> {
+    respond_event_at(http, token, cal, response_status, &format!(
+        "https://www.googleapis.com/calendar/v3/calendars/{}/events/{}",
+        urlencode(&cal.remote_id), urlencode(event_id)
+    )).await
+}
+
+async fn respond_event_at(
+    http: &reqwest::Client,
+    token: &str,
+    cal: &CalendarInfo,
+    response_status: ResponseStatus,
+    endpoint: &str,
+) -> Result<CalEvent, String> {
+    if response_status == ResponseStatus::NeedsAction {
+        return Err("수락, 거절, 미정 중 하나를 선택해 주세요.".into());
+    }
+    // Read Google's current copy: never trust a caller-supplied attendee email.
+    let resp = http.get(endpoint).bearer_auth(token).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("초대 일정 조회 실패 ({})", resp.status()));
+    }
+    let raw: GEvent = resp.json().await.map_err(|e| e.to_string())?;
+    let mut event = to_event(raw, cal).ok_or("취소되었거나 응답할 수 없는 일정입니다.")?;
+    if !event.can_respond {
+        return Err("이 캘린더에서는 초대에 응답할 수 없습니다.".into());
+    }
+    let attendee = event.attendees.iter_mut().find(|a| a.is_self).unwrap();
+    // attendeesOmitted preserves everyone else, including guests hidden by the organizer.
+    let body = serde_json::json!({
+        "attendeesOmitted": true,
+        "attendees": [{ "email": attendee.email, "responseStatus": response_status }]
+    });
+    let resp = http.patch(endpoint).bearer_auth(token)
+        .query(&[("sendUpdates", "all")]).json(&body)
+        .send().await.map_err(|e| e.to_string())?;
+    check_write(resp, "초대 응답").await?;
+    attendee.response_status = response_status;
+    event.response_status = Some(response_status);
+    Ok(event)
 }
 
 pub async fn create_event(
